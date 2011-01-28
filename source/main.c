@@ -1,11 +1,6 @@
 // OpenPS3FTP v1.0
 // by @jjolano
 
-// Credit to:
-//  PSL1GHT devs (great tools)
-//  geohot (great tools)
-//  stoneMcClane for PS3FTP (idea and code)
-
 #include <psl1ght/lv2.h>
 #include <psl1ght/lv2/net.h>
 #include <psl1ght/lv2/filesystem.h>
@@ -32,7 +27,7 @@
 #include <net/net.h>
 #include <io/pad.h>
 
-#include "helper.h" // from psl1ght sample: echoserv
+#include "helper.h"
 #include "sconsole.h"
 
 #define	FTPPORT	21
@@ -166,7 +161,7 @@ static void handleclient(u64 t)
 	
 	while(active == 1 && program_running == 1)
 	{
-		sys_ppu_thread_yield();
+		//sys_ppu_thread_yield();
 		
 		Readline(conn_s, buffer, 2047);
 		
@@ -314,7 +309,7 @@ static void handleclient(u64 t)
 			
 						sprintf(message, "%srw-rw-rw-   1 root  root        %lu %s %s\r\n", 
 							((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
-							entry.st_size, 
+							(long unsigned int)entry.st_size, 
 							timebuf, 
 							ent.d_name);
 						
@@ -592,7 +587,7 @@ static void handleclient(u64 t)
 				struct stat entry; 
 				stat(filename, &entry);
 		
-				sprintf(message, "213 %lu\r\n", entry.st_size);
+				sprintf(message, "213 %lu\r\n", (long unsigned int)entry.st_size);
 			}
 			else
 			{
@@ -631,7 +626,7 @@ static void handleconnections(u64 t)
 {
 	while(program_running == 1)
 	{
-		sys_ppu_thread_yield();
+		//sys_ppu_thread_yield();
 		
 		if((conn_sa[connections] = accept(list_s, NULL, NULL)) < 0)
 		{
@@ -721,6 +716,17 @@ int main(int argc, const char* argv[])
 
 	int i, x, j;
 	char* txt = "";
+
+	netSocketInfo snf;
+	
+	netGetSockInfo(list_s, &snf, 1);
+
+	sprintf(txt, "IP Address: %u.%u.%u.%u port %i",
+		(snf.local_adr.s_addr & 0xFF000000) >> 24,
+		(snf.local_adr.s_addr & 0xFF0000) >> 16,
+		(snf.local_adr.s_addr & 0xFF00) >> 8,
+		(snf.local_adr.s_addr & 0xFF),
+		FTPPORT);
 	
 	while(program_running == 1)
 	{
@@ -749,12 +755,6 @@ int main(int argc, const char* argv[])
 		}
    		
 		print(50, 50, "OpenPS3FTP v1.0 by @jjolano", buffers[currentBuffer]->ptr);
-		sprintf(txt, "IP Address: %u.%u.%u.%u port %i",
-			(servaddr.sin_addr.s_addr & 0xFF000000) >> 24,
-			(servaddr.sin_addr.s_addr & 0xFF0000) >> 16,
-			(servaddr.sin_addr.s_addr & 0xFF00) >> 8,
-			(servaddr.sin_addr.s_addr & 0xFF),
-			FTPPORT);
 		print(50, 150, txt, buffers[currentBuffer]->ptr);
 		print(50, 200, "FTP server is now running.", buffers[currentBuffer]->ptr);
 		print(50, 300, "Press X to quit", buffers[currentBuffer]->ptr);
