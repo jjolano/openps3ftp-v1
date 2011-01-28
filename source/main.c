@@ -33,8 +33,8 @@
 #define	FTPPORT	21
 #define MAXCONN	15 // maximum clients
 
-#define LOGIN_USER "root"
-#define LOGIN_PASS "openbox"
+const char* LOGIN_USERNAME = "root";
+const char* LOGIN_PASSWORD = "openbox";
 
 int connections = 0; // connection count
 int program_running = 1;
@@ -148,60 +148,98 @@ static void handleclient(u64 t)
 	int list_s_pasv = -1;
 	int conn_s_pasv = -1;
 	
-	char*	cwd = "/";
+	char	cwd[2048];
 	u32	rest = 0;
 	int	authd = 0;
+	//int	len = 0;
 	
-	char*	message = "";
-	char*	login_user = "";
+	char	message[4096];
+	char	login_user[32];
+	char	login_pass[64];
 	char	rename_from[2048];
 	char	buffer[2048];
+	
+	strcpy(cwd, "/");
+	strcpy(message, "");
+	strcpy(login_user, "");
 	
 	connections++;
 	
 	while(active == 1 && program_running == 1)
 	{
-		//sys_ppu_thread_yield();
+		sys_ppu_thread_yield();
 		
 		Readline(conn_s, buffer, 2047);
 		
+		/*len = strlen(buffer);
+		if(len > 0 && buffer[len-1] == '\n')
+		{
+			buffer[len-1] = 0;
+		}*/
+		
+		buffer[strcspn(buffer, "\n")] = '\0';
+		
 		if(strncmp(buffer, "USER", 4) == 0)
 		{
-			login_user = buffer+5;
-			sprintf(message, "331 Username %s OK\r\n", login_user);
-			Writeline(conn_s, message, strlen(message));
-		}
-		else if(strncmp(buffer, "PASS", 4) == 0)
-		{
-			if(strcmp(buffer+5, LOGIN_PASS) == 0 && strcmp(login_user, LOGIN_USER) == 0)
+			if(strlen(buffer) > 7)
 			{
-				message = "230 Successful authentication\r\n";
-				authd = 1;
+				strcpy(login_user, buffer+5);
+				
+				sprintf(message, "331 Username OK\r\n");
+				Writeline(conn_s, message, strlen(message));
 			}
 			else
 			{
-				message = "430 Invalid username or password\r\n";
+				sprintf(message, "430 You must provide a username.\r\n");
+				Writeline(conn_s, message, strlen(message));
+			}
+		}
+		else if(strncmp(buffer, "PASS", 4) == 0)
+		{
+			if(strlen(buffer) > 7)
+			{
+				strcpy(login_pass, buffer+5);
+				
+				//if(strncmp(LOGIN_USERNAME, login_user, strlen(LOGIN_USERNAME)) == 0 && strncmp(LOGIN_PASSWORD, login_pass, strlen(LOGIN_PASSWORD)) == 0)
+				if(strcmp(LOGIN_USERNAME, login_user) == 0 && strcmp(LOGIN_PASSWORD, login_pass) == 0)
+				{
+					authd = 1;
+					sprintf(message, "230 Successful authentication\r\n");
+				}
+				else
+				{
+					sprintf(message, "430 Invalid username or password\r\n");
+					Writeline(conn_s, message, strlen(message));
+				}
+			}
+			else
+			{
+				sprintf(message, "430 Invalid username or password\r\n");
 			}
 			
 			Writeline(conn_s, message, strlen(message));
 		}
+		else if(strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
+		{
+			active = 0;
+		}
 		else if(authd == 0)
 		{
-			message = "530 Not logged in\r\n";
+			sprintf(message, "530 Not logged in\r\n");
 			Writeline(conn_s, message, strlen(message));
 		}
 		else if(strncmp(buffer, "FEAT", 4) == 0)
 		{
-			message = "221-Extensions supported:\r\n";
+			sprintf(message, "211-Extensions supported:\r\n");
 			Writeline(conn_s, message, strlen(message));
 			
-			message = " SIZE\r\n";
+			sprintf(message, " SIZE\r\n");
 			Writeline(conn_s, message, strlen(message));
-			message = " PASV\r\n";
+			sprintf(message, " PASV\r\n");
 			Writeline(conn_s, message, strlen(message));
 			
 			
-			message = "221 End\r\n";
+			sprintf(message, "211 End\r\n");
 			Writeline(conn_s, message, strlen(message));
 		}
 		else if(strncmp(buffer, "TYPE", 4) == 0)
@@ -214,7 +252,7 @@ static void handleclient(u64 t)
 			rest = 0;
 			netSocketInfo snf;
 			
-			int ret = netGetSockInfo(list_s, &snf, 1);
+			int ret = netGetSockInfo(conn_s, &snf, 1);
 			
 			if(ret >= 0 && snf.local_adr.s_addr != 0)
 			{
@@ -223,65 +261,73 @@ static void handleclient(u64 t)
 					(snf.local_adr.s_addr & 0xFF0000) >> 16,
 					(snf.local_adr.s_addr & 0xFF00) >> 8,
 					(snf.local_adr.s_addr & 0xFF));
-			}
-			else
-			{
-				message = "550 Internal Error\r\n";
-			}
-			
-			Writeline(conn_s, message, strlen(message));
-			
-			struct sockaddr_in	servaddr;	// socket address structure
-			
-			if((list_s_pasv = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-			{
-				// socket creation failed
-				printf("[%d] Cannot create listening socket.\n", errno);
-			}
-			else
-			{
-				short int port = 61646;
 				
-				// set up socket address structure
-				memset(&servaddr, 0, sizeof(servaddr));
-				servaddr.sin_family      = AF_INET;
-				servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-				servaddr.sin_port        = htons(port);
+				Writeline(conn_s, message, strlen(message));
 				
-				// bind address to listener
-				if(bind(list_s_pasv, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
+				struct sockaddr_in	servaddr;	// socket address structure
+				
+				if((list_s_pasv = netSocket(AF_INET, SOCK_STREAM, 0)) < 0)
 				{
-					// bind failed
-					printf("[%d] Cannot bind address to listening socket.\n", errno);
+					// socket creation failed
+					printf("[%d] Cannot create listening socket.\n", errno);
 				}
 				else
 				{
-					if(listen(list_s_pasv, LISTENQ) < 0)
+					short int port = 61646;
+					
+					// set up socket address structure
+					memset(&servaddr, 0, sizeof(servaddr));
+					servaddr.sin_family      = AF_INET;
+					servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+					servaddr.sin_port        = htons(port);
+					
+					// bind address to listener
+					if(netBind(list_s_pasv, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
 					{
-						printf("[%d] Cannot start listener process.\n", errno);
+						// bind failed
+						printf("[%d] Cannot bind address to listening socket.\n", errno);
 					}
 					else
 					{
-						if((conn_s_pasv = accept(list_s_pasv, NULL, NULL)) < 0)
+						if(netListen(list_s_pasv, LISTENQ) < 0)
 						{
-							printf("warning: failed to accept a connection\n");
+							printf("[%d] Cannot start listener process.\n", errno);
 						}
 						else
 						{
-							// PASV success
+							if((conn_s_pasv = netAccept(list_s_pasv, NULL, NULL)) < 0)
+							{
+								printf("warning: failed to accept a connection\n");
+							}
+							else
+							{
+								// PASV success
+							}
 						}
 					}
 				}
+			}
+			else
+			{
+				sprintf(message, "550 Internal Error\r\n");
+				Writeline(conn_s, message, strlen(message));
 			}
 		}
 		else if(strncmp(buffer, "SYST", 4) == 0)
 		{
-			message = "215 UNIX Type: L8\r\n";
+			sprintf(message, "215 UNIX Type: L8\r\n");
 			Writeline(conn_s, message, strlen(message));
 		}
 		else if(strncmp(buffer, "LIST", 4) == 0)
 		{
-			message = "150 Accepted data connection\r\n";
+			if(conn_s_pasv == -1)
+			{
+				sprintf(message, "425 No data connection\r\n");
+				Writeline(conn_s, message, strlen(message));
+				continue;
+			}
+			
+			sprintf(message, "150 Accepted data connection\r\n");
 			Writeline(conn_s, message, strlen(message));
 			
 			int root;
@@ -320,11 +366,11 @@ static void handleclient(u64 t)
 				lv2FsCloseDir(root);
 			}
 			
-			message = "226 Transfer complete\r\n";
+			sprintf(message, "226 Transfer complete\r\n");
 			Writeline(conn_s, message, strlen(message));
 			
-			closesocket(conn_s_pasv);
-			closesocket(list_s_pasv);
+			netClose(conn_s_pasv);
+			netClose(list_s_pasv);
 		}
 		else if(strncmp(buffer, "PWD", 3) == 0)
 		{
@@ -333,7 +379,14 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "RETR", 4) == 0)
 		{
-			message = "150 Opening data connection\r\n";
+			if(conn_s_pasv == -1)
+			{
+				sprintf(message, "425 No data connection\r\n");
+				Writeline(conn_s, message, strlen(message));
+				continue;
+			}
+			
+			sprintf(message, "150 Opening data connection\r\n");
 			Writeline(conn_s, message, strlen(message));
 			
 			char filename[2048];
@@ -367,8 +420,8 @@ static void handleclient(u64 t)
 		
 			Writeline(conn_s, message, strlen(message));
 			
-			closesocket(conn_s_pasv);
-			closesocket(list_s_pasv);
+			netClose(conn_s_pasv);
+			netClose(list_s_pasv);
 		}
 		else if(strncmp(buffer, "CWD", 3) == 0)
 		{
@@ -406,7 +459,7 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "CDUP", 4) == 0)
 		{
-			message = "250 Directory change successful: ";
+			sprintf(message, "250 Directory change successful: ");
 
 			for(int i=strlen(cwd)-2; i>0; i--)
 			{
@@ -446,7 +499,14 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "STOR", 4) == 0)
 		{
-			message = "150 Opening data connection\r\n";
+			if(conn_s_pasv == -1)
+			{
+				sprintf(message, "425 No data connection\r\n");
+				Writeline(conn_s, message, strlen(message));
+				continue;
+			}
+
+			sprintf(message, "150 Opening data connection\r\n");
 			Writeline(conn_s, message, strlen(message));
 		
 			char path[2048];
@@ -494,8 +554,8 @@ static void handleclient(u64 t)
 		
 			Writeline(conn_s, message, strlen(message));
 			
-			closesocket(conn_s_pasv);
-			closesocket(list_s_pasv);
+			netClose(conn_s_pasv);
+			netClose(list_s_pasv);
 		}
 		else if(strncmp(buffer, "MKD", 3) == 0)
 		{
@@ -591,32 +651,30 @@ static void handleclient(u64 t)
 			}
 			else
 			{
-				message = "550 Requested file doesn't exist\r\n";
+				sprintf(message, "550 Requested file doesn't exist\r\n");
 			}
 		
 			Writeline(conn_s, message, strlen(message));
 		}
 		else if(strncmp(buffer, "NOOP", 4) == 0)
 		{
-			message = "200 Zzzz...\r\n";
+			sprintf(message, "200 Zzzz...\r\n");
 			Writeline(conn_s, message, strlen(message));
-		}
-		else if(strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
-		{
-			message = "221 Goodbye.\r\n";
-			Writeline(conn_s, message, strlen(message));
-			active = 0;
 		}
 		else
 		{
-			message = "502 Command not implemented\r\n";
+			sprintf(message, "502 Command not implemented\r\n");
 			Writeline(conn_s, message, strlen(message));
 		}
 	}
 	
-	closesocket(conn_s);
-	closesocket(conn_s_pasv);
-	closesocket(list_s_pasv);
+	sprintf(message, "221 Goodbye.\r\n");
+	Writeline(conn_s, message, strlen(message));
+	
+	netClose(conn_s);
+	netClose(conn_s_pasv);
+	netClose(list_s_pasv);
+	
 	connections--;
 	
 	sys_ppu_thread_exit(0);
@@ -626,9 +684,9 @@ static void handleconnections(u64 t)
 {
 	while(program_running == 1)
 	{
-		//sys_ppu_thread_yield();
+		sys_ppu_thread_yield();
 		
-		if((conn_sa[connections] = accept(list_s, NULL, NULL)) < 0)
+		if((conn_sa[connections] = netAccept(list_s, NULL, NULL)) < 0)
 		{
 			printf("warning: failed to accept a connection\n");
 		}
@@ -641,7 +699,7 @@ static void handleconnections(u64 t)
 				// drop client due to client limit
 				sprintf(message, "530 Maximum number of clients (%i) exceeded.\r\n", MAXCONN);
 				Writeline(conn_sa[connections], message, strlen(message));
-				closesocket(conn_sa[connections]);
+				netClose(conn_sa[connections]);
 				conn_sa[connections] = 0;
 			}
 			else
@@ -671,7 +729,7 @@ int main(int argc, const char* argv[])
 
 	netInitialize();
 	
-	if((list_s = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+	if((list_s = netSocket(AF_INET, SOCK_STREAM, 0)) < 0)
 	{
 		// socket creation failed
 		printf("[%d] Cannot create listening socket.\n", errno);
@@ -687,14 +745,14 @@ int main(int argc, const char* argv[])
 		servaddr.sin_port        = htons(port);
 		
 		// bind address to listener
-		if(bind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
+		if(netBind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
 		{
 			// bind failed
 			printf("[%d] Cannot bind address to listening socket.\n", errno);
 		}
 		else
 		{
-			if(listen(list_s, LISTENQ) < 0)
+			if(netListen(list_s, LISTENQ) < 0)
 			{
 				printf("[%d] Cannot start listener process.\n", errno);
 			}
@@ -715,18 +773,6 @@ int main(int argc, const char* argv[])
 	ioPadInit(7);
 
 	int i, x, j;
-	char* txt = "";
-
-	netSocketInfo snf;
-	
-	netGetSockInfo(list_s, &snf, 1);
-
-	sprintf(txt, "IP Address: %u.%u.%u.%u port %i",
-		(snf.local_adr.s_addr & 0xFF000000) >> 24,
-		(snf.local_adr.s_addr & 0xFF0000) >> 16,
-		(snf.local_adr.s_addr & 0xFF00) >> 8,
-		(snf.local_adr.s_addr & 0xFF),
-		FTPPORT);
 	
 	while(program_running == 1)
 	{
@@ -755,7 +801,6 @@ int main(int argc, const char* argv[])
 		}
    		
 		print(50, 50, "OpenPS3FTP v1.0 by @jjolano", buffers[currentBuffer]->ptr);
-		print(50, 150, txt, buffers[currentBuffer]->ptr);
 		print(50, 200, "FTP server is now running.", buffers[currentBuffer]->ptr);
 		print(50, 300, "Press X to quit", buffers[currentBuffer]->ptr);
 
@@ -763,6 +808,7 @@ int main(int argc, const char* argv[])
 		currentBuffer = !currentBuffer;
 	}
 	
+	netClose(list_s);
 	netDeinitialize();
 	ioPadEnd();
 	printf("Process completed");
