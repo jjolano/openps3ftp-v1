@@ -41,6 +41,7 @@ int connections = 0; // connection count
 int program_running = 1;
 int list_s;
 int conn_sa[MAXCONN + 1];
+int conn_s_idinc = 0;
 
 typedef struct {
 	int height;
@@ -59,7 +60,7 @@ void waitFlip()
 {
 	// Block the PPU thread untill the previous flip operation has finished.
 	while (gcmGetFlipStatus() != 0)
-		usleep(100);
+		usleep(200);
 	gcmResetFlipStatus();
 }
 
@@ -145,7 +146,7 @@ int isDir(char* path)
 
 static void handleclient(u64 t)
 {
-	int conn_s = conn_sa[connections];
+	int conn_s = conn_sa[conn_s_idinc];
 	int list_s_data = -1;
 	int conn_s_data = -1;
 	
@@ -162,6 +163,7 @@ static void handleclient(u64 t)
 	strcpy(cwd, "/");
 	
 	connections++;
+	conn_s_idinc++;
 	
 	while(program_running == 1)
 	{
@@ -759,8 +761,13 @@ static void handleconnections(u64 t)
 	while(program_running == 1)
 	{
 		sys_ppu_thread_yield();
+
+		if(conn_s_idinc == MAXCONN)
+		{
+			conn_s_idinc = 0;
+		}
 		
-		if((conn_sa[connections] = netAccept(list_s, NULL, NULL)) < 0)
+		if((conn_sa[conn_s_idinc] = netAccept(list_s, NULL, NULL)) < 0)
 		{
 			printf("warning: failed to accept a connection\n");
 		}
@@ -771,22 +778,20 @@ static void handleconnections(u64 t)
 			if(connections >= MAXCONN)
 			{
 				// drop client due to client limit
-				sprintf(message, "530 Maximum number of clients (%i) exceeded.\r\n", MAXCONN);
-				Writeline(conn_sa[connections], message, strlen(message));
-				netClose(conn_sa[connections]);
-				conn_sa[connections] = 0;
+				message = "530 Maximum number of clients exceeded.\r\n";
+				Writeline(conn_sa[conn_s_idinc], message, strlen(message));
+				netClose(conn_sa[conn_s_idinc]);
+				conn_sa[conn_s_idinc] = 0;
 			}
 			else
 			{
-				usleep(250);
-				
-				message = "220 OpenPS3FTP by @jjolano\r\n";
-				Writeline(conn_sa[connections], message, strlen(message));
-				
 				sys_ppu_thread_t id;
 				char *thread_name = "ClientCmdHandler";
 				
 				sys_ppu_thread_create(&id, handleclient, 0x1337, 1500, 0x10000, 0, thread_name);
+				
+				message = "220 OpenPS3FTP by @jjolano\r\n";
+				Writeline(conn_sa[conn_s_idinc], message, strlen(message));
 			}
 		}
 	}
