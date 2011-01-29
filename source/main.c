@@ -392,7 +392,7 @@ static void handleclient(u64 t)
 				Lv2FsDirent ent;
 				
 				lv2FsReadDir(root, &ent, &read);
-
+				
 				char path[2048];
 				
 				while(read != 0)
@@ -459,7 +459,7 @@ static void handleclient(u64 t)
 		
 			while((rd = read(fd, buf, 32768)) > 0)
 			{
-				wr = send(conn_s_data, buf, rd, 0);
+				wr = netSend(conn_s_data, buf, rd, 0);
 				if(wr != rd)
 				{
 					break;
@@ -586,7 +586,7 @@ static void handleclient(u64 t)
 		
 			if(fd > 0)
 			{
-				while((rd = recv(conn_s_data, buf, 32768, MSG_WAITALL)) > 0)
+				while((rd = netRecv(conn_s_data, buf, 32768, MSG_WAITALL)) > 0)
 				{
 					wr = write(fd, buf, rd);
 					if(wr != rd)
@@ -599,13 +599,13 @@ static void handleclient(u64 t)
 				{
 					wr = rd;
 				}
-		
-				close(fd);
 			}
 			else
 			{
 				wr = 1;
 			}
+
+			close(fd);
 		
 			sprintf(message, "%i %s\r\n", 
 				(wr == rd)?226:426, 
