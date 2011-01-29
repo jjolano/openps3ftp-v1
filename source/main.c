@@ -244,7 +244,7 @@ static void handleclient(u64 t)
 			char connectinfo[24];
 			strcpy(connectinfo, buffer+5);
 			
-			char *data[6];
+			char data[7][4];
 			int len = strlen(connectinfo);
 			int i, x = 0, y = 0;
 			
@@ -252,6 +252,7 @@ static void handleclient(u64 t)
 			{
 				if(connectinfo[i] == ',')
 				{
+					data[x][y] = '\0';
 					x++;
 					y = 0;
 				}
@@ -264,8 +265,11 @@ static void handleclient(u64 t)
 			
 			char conn_ipaddr[16];
 			sprintf(conn_ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
+
+			int p1 = atoi(data[4]);
+			int p2 = atoi(data[5]);
 			
-			short int conn_port = (atoi(data[4]) * 256) + atoi(data[5]);
+			short int conn_port = (p1 * 256) + p2;
 			
 			struct sockaddr_in	servaddr;
 			
