@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <fcntl.h>
+#include <time.h>
 
 #include <sysutil/video.h>
 #include <sysmodule/sysmodule.h>
@@ -58,7 +59,7 @@ void waitFlip()
 {
 	// Block the PPU thread untill the previous flip operation has finished.
 	while (gcmGetFlipStatus() != 0)
-		usleep(200);
+		usleep(100);
 	gcmResetFlipStatus();
 }
 
@@ -77,7 +78,7 @@ void makeBuffer(int id, int size)
 
 	assert(realityAddressToOffset(buf->ptr, &buf->offset) == 0);
 	assert(gcmSetDisplayBuffer(id, buf->offset, res.width * 4, res.width, res.height) == 0);
-
+	
 	buf->width = res.width;
 	buf->height = res.height;
 	buffers[id] = buf;
@@ -85,10 +86,10 @@ void makeBuffer(int id, int size)
 
 void init_screen()
 {
-	void *host_addr = memalign(1024 * 1024, 1024 * 1024);
+	void *host_addr = memalign(1024*1024, 1024*1024);
 	assert(host_addr != NULL);
 
-	context = realityInit(0x10000, 1024 * 1024, host_addr);
+	context = realityInit(0x10000, 1024*1024, host_addr); 
 	assert(context != NULL);
 
 	VideoState state;
@@ -96,7 +97,7 @@ void init_screen()
 	assert(state.state == 0);
 
 	assert(videoGetResolution(state.displayMode.resolution, &res) == 0);
-
+	
 	VideoConfiguration vconfig;
 	memset(&vconfig, 0, sizeof(VideoConfiguration));
 	vconfig.resolution = state.displayMode.resolution;
@@ -104,10 +105,10 @@ void init_screen()
 	vconfig.pitch = res.width * 4;
 
 	assert(videoConfigure(0, &vconfig, NULL, 0) == 0);
-	assert(videoGetState(0, 0, &state) == 0);
+	assert(videoGetState(0, 0, &state) == 0); 
 
 	s32 buffer_size = 4 * res.width * res.height;
-
+	
 	gcmSetFlipMode(GCM_FLIP_VSYNC);
 	makeBuffer(0, buffer_size);
 	makeBuffer(1, buffer_size);
@@ -119,8 +120,9 @@ void init_screen()
 void absPath(char* absPath, const char* path, const char* cwd)
 {
 	if(strlen(path) > 0 && path[0] == '/')
+	{
 		strcpy(absPath, path);
-
+	}
 	else
 	{
 		strcpy(absPath, cwd);
@@ -143,15 +145,13 @@ int isDir(char* path)
 
 static void handleclient(u64 t)
 {
-	int active = 1;
 	int conn_s = conn_sa[connections];
-	int list_s_pasv = -1;
-	int conn_s_pasv = -1;
+	int list_s_data = -1;
+	int conn_s_data = -1;
 	
 	char	cwd[2048];
 	u32	rest = 0;
 	int	authd = 0;
-	//int	len = 0;
 	
 	char	message[4096];
 	char	login_user[32];
@@ -160,24 +160,17 @@ static void handleclient(u64 t)
 	char	buffer[2048];
 	
 	strcpy(cwd, "/");
-	strcpy(message, "");
-	strcpy(login_user, "");
 	
 	connections++;
 	
-	while(active == 1 && program_running == 1)
+	while(program_running == 1)
 	{
 		sys_ppu_thread_yield();
 		
 		Readline(conn_s, buffer, 2047);
 		
-		/*len = strlen(buffer);
-		if(len > 0 && buffer[len-1] == '\n')
-		{
-			buffer[len-1] = 0;
-		}*/
-		
 		buffer[strcspn(buffer, "\n")] = '\0';
+		buffer[strcspn(buffer, "\r")] = '\0';
 		
 		if(strncmp(buffer, "USER", 4) == 0)
 		{
@@ -185,7 +178,7 @@ static void handleclient(u64 t)
 			{
 				strcpy(login_user, buffer+5);
 				
-				sprintf(message, "331 Username OK\r\n");
+				sprintf(message, "331 Username %s OK\r\n", login_user);
 				Writeline(conn_s, message, strlen(message));
 			}
 			else
@@ -200,7 +193,6 @@ static void handleclient(u64 t)
 			{
 				strcpy(login_pass, buffer+5);
 				
-				//if(strncmp(LOGIN_USERNAME, login_user, strlen(LOGIN_USERNAME)) == 0 && strncmp(LOGIN_PASSWORD, login_pass, strlen(LOGIN_PASSWORD)) == 0)
 				if(strcmp(LOGIN_USERNAME, login_user) == 0 && strcmp(LOGIN_PASSWORD, login_pass) == 0)
 				{
 					authd = 1;
@@ -221,7 +213,7 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
 		{
-			active = 0;
+			break;
 		}
 		else if(authd == 0)
 		{
@@ -247,6 +239,56 @@ static void handleclient(u64 t)
 			sprintf(message, "200 TYPE is now %s\r\n", buffer+5);
 			Writeline(conn_s, message, strlen(message));
 		}
+		else if(strncmp(buffer, "PORT", 4) == 0)
+		{
+			char connectinfo[24];
+			strcpy(connectinfo, buffer+5);
+			
+			char *data[6];
+			int len = strlen(connectinfo);
+			int i, x = 0, y = 0;
+			
+			for(i = 0;i < len;i++)
+			{
+				if(connectinfo[i] == ',')
+				{
+					x++;
+					y = 0;
+				}
+				else
+				{
+					data[x][y] =  connectinfo[i];
+					y++;
+				}
+			}
+			
+			char conn_ipaddr[16];
+			sprintf(conn_ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
+			
+			short int conn_port = (atoi(data[4]) * 256) + atoi(data[5]);
+			
+			struct sockaddr_in	servaddr;
+			
+			netClose(conn_s_data);
+			
+			if((conn_s_data = netSocket(PF_INET, SOCK_STREAM, 0)) == 0)
+			{
+				memset(&servaddr, 0, sizeof(servaddr));
+				servaddr.sin_family	= AF_INET;
+				servaddr.sin_port	= htons(conn_port);
+				inet_pton(AF_INET, conn_ipaddr, &servaddr.sin_addr);
+				
+				if(connect(conn_s_data, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
+				{
+					sprintf(message, "200 PORT command successful\r\n");
+					Writeline(conn_s, message, strlen(message));
+					continue;
+				}
+			}
+			
+			sprintf(message, "425 Internal Error\r\n");
+			Writeline(conn_s, message, strlen(message));
+		}
 		else if(strncmp(buffer, "PASV", 4) == 0)
 		{
 			rest = 0;
@@ -256,25 +298,33 @@ static void handleclient(u64 t)
 			
 			if(ret >= 0 && snf.local_adr.s_addr != 0)
 			{
-				sprintf(message, "227 Entering Passive Mode (%u,%u,%u,%u,240,206)\r\n",
+				// calculate the passive mode port
+				srand((unsigned)time(NULL));
+				
+				int rand1 = 4 + rand() % 255;
+				int rand2 = 1 + rand() % 255;
+				
+				short int port = (rand1 * 256) + rand2;
+				
+				sprintf(message, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
 					(snf.local_adr.s_addr & 0xFF000000) >> 24,
 					(snf.local_adr.s_addr & 0xFF0000) >> 16,
 					(snf.local_adr.s_addr & 0xFF00) >> 8,
-					(snf.local_adr.s_addr & 0xFF));
-				
-				Writeline(conn_s, message, strlen(message));
+					(snf.local_adr.s_addr & 0xFF),
+					rand1, rand2);
 				
 				struct sockaddr_in	servaddr;	// socket address structure
 				
-				if((list_s_pasv = netSocket(AF_INET, SOCK_STREAM, 0)) < 0)
+				netClose(conn_s_data);
+				netClose(list_s_data);
+				
+				if((list_s_data = netSocket(AF_INET, SOCK_STREAM, 0)) < 0)
 				{
 					// socket creation failed
 					printf("[%d] Cannot create listening socket.\n", errno);
 				}
 				else
 				{
-					short int port = 61646;
-					
 					// set up socket address structure
 					memset(&servaddr, 0, sizeof(servaddr));
 					servaddr.sin_family      = AF_INET;
@@ -282,36 +332,37 @@ static void handleclient(u64 t)
 					servaddr.sin_port        = htons(port);
 					
 					// bind address to listener
-					if(netBind(list_s_pasv, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
+					if(netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
 					{
 						// bind failed
 						printf("[%d] Cannot bind address to listening socket.\n", errno);
 					}
 					else
 					{
-						if(netListen(list_s_pasv, LISTENQ) < 0)
+						if(netListen(list_s_data, LISTENQ) < 0)
 						{
 							printf("[%d] Cannot start listener process.\n", errno);
 						}
 						else
 						{
-							if((conn_s_pasv = netAccept(list_s_pasv, NULL, NULL)) < 0)
+							Writeline(conn_s, message, strlen(message));
+							
+							if((conn_s_data = netAccept(list_s_data, NULL, NULL)) < 0)
 							{
 								printf("warning: failed to accept a connection\n");
 							}
 							else
 							{
 								// PASV success
+								continue;
 							}
 						}
 					}
 				}
 			}
-			else
-			{
-				sprintf(message, "550 Internal Error\r\n");
-				Writeline(conn_s, message, strlen(message));
-			}
+		
+		sprintf(message, "425 Internal Error\r\n");
+		Writeline(conn_s, message, strlen(message));
 		}
 		else if(strncmp(buffer, "SYST", 4) == 0)
 		{
@@ -320,7 +371,7 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "LIST", 4) == 0)
 		{
-			if(conn_s_pasv == -1)
+			if(conn_s_data == -1)
 			{
 				sprintf(message, "425 No data connection\r\n");
 				Writeline(conn_s, message, strlen(message));
@@ -336,30 +387,34 @@ static void handleclient(u64 t)
 				u64 read = -1;
 				Lv2FsDirent ent;
 				
-				if(lv2FsReadDir(root, &ent, &read) == 0)
+				lv2FsReadDir(root, &ent, &read);
+
+				char path[2048];
+				
+				while(read != 0)
 				{
-					char path[2048];
+					strcpy(path, cwd);
+					strcat(path, ent.d_name);
 					
-					while(read != 0)
+					struct stat entry; 
+					stat(path, &entry);
+		
+					struct tm *tm;
+					char timebuf[80];
+					tm = localtime(&entry.st_mtime);
+					strftime(timebuf, 80, "%b %d %Y", tm);
+		
+					sprintf(message, "%srw-rw-rw-   1 root  root        %lu %s %s\r\n", 
+						((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
+						(long unsigned int)entry.st_size, 
+						timebuf, 
+						ent.d_name);
+					
+					Writeline(conn_s_data, message, strlen(message));
+					
+					if(lv2FsReadDir(root, &ent, &read) != 0)
 					{
-						strcpy(path, cwd);
-						strcat(path, ent.d_name);
-						
-						struct stat entry; 
-						stat(path, &entry);
-			
-						struct tm *tm;
-						char timebuf[80];
-						tm = localtime(&entry.st_mtime);
-						strftime(timebuf, 80, "%b %d %Y", tm);
-			
-						sprintf(message, "%srw-rw-rw-   1 root  root        %lu %s %s\r\n", 
-							((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
-							(long unsigned int)entry.st_size, 
-							timebuf, 
-							ent.d_name);
-						
-						Writeline(conn_s_pasv, message, strlen(message));
+						break;
 					}
 				}
 				
@@ -369,8 +424,8 @@ static void handleclient(u64 t)
 			sprintf(message, "226 Transfer complete\r\n");
 			Writeline(conn_s, message, strlen(message));
 			
-			netClose(conn_s_pasv);
-			netClose(list_s_pasv);
+			netClose(conn_s_data);
+			netClose(list_s_data);
 		}
 		else if(strncmp(buffer, "PWD", 3) == 0)
 		{
@@ -379,7 +434,7 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "RETR", 4) == 0)
 		{
-			if(conn_s_pasv == -1)
+			if(conn_s_data == -1)
 			{
 				sprintf(message, "425 No data connection\r\n");
 				Writeline(conn_s, message, strlen(message));
@@ -400,7 +455,7 @@ static void handleclient(u64 t)
 		
 			while((rd = read(fd, buf, 32768)) > 0)
 			{
-				wr = send(conn_s_pasv, buf, rd, 0);
+				wr = send(conn_s_data, buf, rd, 0);
 				if(wr != rd)
 				{
 					break;
@@ -420,8 +475,8 @@ static void handleclient(u64 t)
 		
 			Writeline(conn_s, message, strlen(message));
 			
-			netClose(conn_s_pasv);
-			netClose(list_s_pasv);
+			netClose(conn_s_data);
+			netClose(list_s_data);
 		}
 		else if(strncmp(buffer, "CWD", 3) == 0)
 		{
@@ -499,7 +554,7 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "STOR", 4) == 0)
 		{
-			if(conn_s_pasv == -1)
+			if(conn_s_data == -1)
 			{
 				sprintf(message, "425 No data connection\r\n");
 				Writeline(conn_s, message, strlen(message));
@@ -527,7 +582,7 @@ static void handleclient(u64 t)
 		
 			if(fd > 0)
 			{
-				while((rd = recv(conn_s_pasv, buf, 32768, MSG_WAITALL)) > 0)
+				while((rd = recv(conn_s_data, buf, 32768, MSG_WAITALL)) > 0)
 				{
 					wr = write(fd, buf, rd);
 					if(wr != rd)
@@ -554,8 +609,8 @@ static void handleclient(u64 t)
 		
 			Writeline(conn_s, message, strlen(message));
 			
-			netClose(conn_s_pasv);
-			netClose(list_s_pasv);
+			netClose(conn_s_data);
+			netClose(list_s_data);
 		}
 		else if(strncmp(buffer, "MKD", 3) == 0)
 		{
@@ -672,8 +727,8 @@ static void handleclient(u64 t)
 	Writeline(conn_s, message, strlen(message));
 	
 	netClose(conn_s);
-	netClose(conn_s_pasv);
-	netClose(list_s_pasv);
+	netClose(conn_s_data);
+	netClose(list_s_data);
 	
 	connections--;
 	
@@ -704,6 +759,8 @@ static void handleconnections(u64 t)
 			}
 			else
 			{
+				usleep(250);
+				
 				message = "220 OpenPS3FTP by @jjolano\r\n";
 				Writeline(conn_sa[connections], message, strlen(message));
 				
