@@ -169,6 +169,11 @@ static void handleclient(u64 t)
 		
 		Readline(conn_s, buffer, 2047);
 		
+		if(strlen(buffer) == 0)
+		{
+			break;
+		}
+		
 		buffer[strcspn(buffer, "\n")] = '\0';
 		buffer[strcspn(buffer, "\r")] = '\0';
 		
@@ -303,10 +308,10 @@ static void handleclient(u64 t)
 			if(ret >= 0 && snf.local_adr.s_addr != 0)
 			{
 				// calculate the passive mode port
-				srand((unsigned)time(NULL));
+				srand((unsigned)time(NULL) + rand());
 				
 				int rand1 = 4 + rand() % 255;
-				int rand2 = 1 + rand() % 255;
+				int rand2 = rand() % 256;
 				
 				short int port = (rand1 * 256) + rand2;
 				
@@ -452,30 +457,39 @@ static void handleclient(u64 t)
 			absPath(filename, buffer+5, cwd);
 
 			char buf[32768];
-			int rd = -1, wr = -1;
-			int fd = open(filename, O_RDONLY);
 			
-			lseek(fd, rest, SEEK_SET);
+			u64 pos;
+			u64 read = -1;
+			u64 write = -1;
+			
+			Lv2FsFile fd = -1;
+			
+			lv2FsOpen(filename, LV2_O_RDONLY, &fd, 0, NULL, 0);
+			
+			lv2FsLSeek64(fd, (s64)rest, SEEK_SET, &pos);
+			
+			lv2FsRead(fd, buf, 32768, &read);
 		
-			while((rd = read(fd, buf, 32768)) > 0)
+			while((int)read > 0)
 			{
-				wr = netSend(conn_s_data, buf, rd, 0);
-				if(wr != rd)
+				write = (u64)netSend(conn_s_data, buf, read, 0);
+				
+				if(write != read || lv2FsRead(fd, buf, 32768, &read) != 0)
 				{
 					break;
 				}
 			}
 		
-			close(fd);
+			lv2FsClose(fd);
 		
-			if(rd < 1)
+			if((int)read < 1)
 			{
-				rd = wr = 0;
+				read = write;
 			}
 		
 			sprintf(message, "%i %s\r\n", 
-				(wr == rd)?226:426, 
-				(wr == rd)?"Transfer complete":"Transfer aborted");
+				(write == read)?226:426, 
+				(write == read)?"Transfer complete":"Transfer aborted");
 		
 			Writeline(conn_s, message, strlen(message));
 			
@@ -548,7 +562,7 @@ static void handleclient(u64 t)
 			char filename[2048];
 			absPath(filename, buffer+5, cwd);
 			
-			int ret = remove(filename);
+			int ret = lv2FsUnlink(filename);
 			
 			sprintf(message, "%i %s\r\n", 
 				(ret == 0)?250:550, 
@@ -569,47 +583,48 @@ static void handleclient(u64 t)
 			Writeline(conn_s, message, strlen(message));
 		
 			char path[2048];
-			if(buffer[5] == '/')
-			{
-				strcpy(path, "");
-			}
-			else
-			{
-				strcpy(path, cwd);
-			}
-		
-			strcat(path, buffer+5);
+			absPath(path, buffer+5, cwd);
 		
 			char buf[32768];
-			int rd = -1, wr = -1;
-			int fd = open(path, O_WRONLY | O_CREAT);
-		
+			
+			u64 pos;
+			u64 read = -1;
+			u64 write = -1;
+			
+			Lv2FsFile fd = -1;
+			
+			lv2FsOpen(path, LV2_O_WRONLY | LV2_O_CREAT | LV2_O_TRUNC, &fd, 0, NULL, 0);
+			lv2FsChmod(path, S_IFMT | 0666);
+			
+			lv2FsLSeek64(fd, 0, 0, &pos);
+			
 			if(fd > 0)
 			{
-				while((rd = netRecv(conn_s_data, buf, 32768, MSG_WAITALL)) > 0)
+				while((int)(read = (u64)netRecv(conn_s_data, buf, 32768, MSG_WAITALL)) > 0)
 				{
-					wr = write(fd, buf, rd);
-					if(wr != rd)
+					lv2FsWrite(fd, buf, read, &write);
+					
+					if(write != read)
 					{
 						break;
 					}
 				}
-		
-				if(rd <= 0)
+	
+				if((int)read <= 0)
 				{
-					wr = rd;
+					write = read;
 				}
+	
+				lv2FsClose(fd);
 			}
 			else
 			{
-				wr = 1;
+				write = 1;
 			}
-
-			close(fd);
 		
 			sprintf(message, "%i %s\r\n", 
-				(wr == rd)?226:426, 
-				(wr == rd)?"Transfer complete":"Transfer aborted");
+				(write == read)?226:426, 
+				(write == read)?"Transfer complete":"Transfer aborted");
 		
 			Writeline(conn_s, message, strlen(message));
 			
@@ -621,7 +636,7 @@ static void handleclient(u64 t)
 			char filename[2048];
 			absPath(filename, buffer+4, cwd);
 			
-			int ret = mkdir(filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+			int ret = lv2FsMkdir(filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
 			
 			sprintf(message, "%i %s\r\n", 
 				(ret == 0)?250:550, 
@@ -637,7 +652,7 @@ static void handleclient(u64 t)
 			int ret = -1;
 			// if the target is no directory -> error
 			if(isDir(filename))
-				ret = rmdir(filename);
+				ret = lv2FsRmdir(filename);
 			
 			sprintf(message, "%i %s\r\n", 
 				(ret == 0)?250:550, 
@@ -730,9 +745,9 @@ static void handleclient(u64 t)
 	sprintf(message, "221 Goodbye.\r\n");
 	Writeline(conn_s, message, strlen(message));
 	
-	netClose(conn_s);
 	netClose(conn_s_data);
 	netClose(list_s_data);
+	netClose(conn_s);
 	
 	connections--;
 	
