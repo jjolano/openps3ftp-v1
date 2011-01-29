@@ -1,8 +1,11 @@
 OpenPS3FTP
+https://github.com/jjolano/openps3ftp
 
-This is my first program in C, and also my first homebrew.
+This is my first program in C (I'm new to C, but I have coded in other languages), and also my first homebrew.
 
 Default username: root
 Default password: openbox
 
 Credit to PSL1GHT, geohot, and stoneMcClane for tools and code
+
+Suggestions and/or fixes are welcome.
