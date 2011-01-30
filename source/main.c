@@ -31,6 +31,8 @@
 #include "helper.h"
 #include "sconsole.h"
 
+#include <sysutil/events.h>
+
 #define	FTPPORT		21
 #define BUFFER_SIZE	16384 // the buffer size used in file transfers
 
@@ -53,6 +55,14 @@ gcmContextData *context;
 VideoResolution res;
 int currentBuffer = 0;
 buffer *buffers[2];
+
+void eventHandler(u64 status, u64 param, void * userdata)
+{
+    if (status == EVENT_REQUEST_EXITAPP) //0x101
+    {
+        exit(0);
+    }
+}
 
 void waitFlip()
 {
@@ -780,6 +790,8 @@ int main(int argc, const char* argv[])
 {
 	printf("OpenPS3FTP by @jjolano\nVersion %s\n\nInitializing modules...\n", VERSION);
 	
+	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
+	
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_WHITE, res.width, res.height);
 	ioPadInit(7);
@@ -816,6 +828,7 @@ int main(int argc, const char* argv[])
 	
 	while(program_running == 1)
 	{
+		sysCheckCallback();
 		ioPadGetInfo(&padinfo);
 		for(i = 0; i < MAX_PADS; i++)
 		{
