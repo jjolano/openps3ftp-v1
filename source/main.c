@@ -52,7 +52,7 @@ typedef struct {
 gcmContextData *context;
 VideoResolution res;
 int currentBuffer = 0;
-buffer *buffers[3];
+buffer *buffers[2];
 
 void waitFlip()
 {
@@ -111,7 +111,6 @@ void init_screen()
 	gcmSetFlipMode(GCM_FLIP_VSYNC);
 	makeBuffer(0, buffer_size);
 	makeBuffer(1, buffer_size);
-	makeBuffer(2, buffer_size);
 
 	gcmResetFlipStatus();
 	flip(1);
