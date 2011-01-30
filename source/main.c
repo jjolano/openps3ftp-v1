@@ -1,5 +1,5 @@
-// OpenPS3FTP v1.0
-// by @jjolano
+// OpenPS3FTP by @jjolano
+// Credit to PSL1GHT, geohot, and stoneMcClane for tools and code
 
 #include <psl1ght/lv2.h>
 #include <psl1ght/lv2/net.h>
@@ -31,17 +31,15 @@
 #include "helper.h"
 #include "sconsole.h"
 
-#define	FTPPORT	21
-#define MAXCONN	15 // maximum clients
+#define	FTPPORT		21
+#define BUFFER_SIZE	16384 // the buffer size used in file transfers
 
-const char* LOGIN_USERNAME = "root";
-const char* LOGIN_PASSWORD = "openbox";
+const char* VERSION		= "1.1";
 
-int connections = 0; // connection count
+const char* LOGIN_USERNAME	= "root";
+const char* LOGIN_PASSWORD	= "openbox";
+
 int program_running = 1;
-int list_s;
-int conn_sa[MAXCONN + 1];
-int conn_s_idinc = 0;
 
 typedef struct {
 	int height;
@@ -54,7 +52,7 @@ typedef struct {
 gcmContextData *context;
 VideoResolution res;
 int currentBuffer = 0;
-buffer *buffers[2];
+buffer *buffers[3];
 
 void waitFlip()
 {
@@ -113,6 +111,7 @@ void init_screen()
 	gcmSetFlipMode(GCM_FLIP_VSYNC);
 	makeBuffer(0, buffer_size);
 	makeBuffer(1, buffer_size);
+	makeBuffer(2, buffer_size);
 
 	gcmResetFlipStatus();
 	flip(1);
@@ -144,34 +143,35 @@ int isDir(char* path)
 	return ((entry.st_mode & S_IFDIR) != 0);
 }
 
-static void handleclient(u64 t)
+static void handleclient(u64 conn_s_p)
 {
-	int conn_s = conn_sa[conn_s_idinc];
+	int conn_s = (int)conn_s_p;
 	int list_s_data = -1;
 	int conn_s_data = -1;
 	
 	char	cwd[2048];
+	char	login_user[32];
+	char	login_pass[64];
+	char	rename_from[2048];
 	u32	rest = 0;
 	int	authd = 0;
 	
 	char	message[4096];
-	char	login_user[32];
-	char	login_pass[64];
-	char	rename_from[2048];
 	char	buffer[2048];
 	
-	strcpy(cwd, "/");
+	sprintf(cwd, "/");
 	
-	connections++;
-	conn_s_idinc++;
+	sprintf(message, "220-OpenPS3FTP by @jjolano\r\n");
+	Writeline(conn_s, message, strlen(message));
+	
+	sprintf(message, "220 Version %s\r\n", VERSION);
+	Writeline(conn_s, message, strlen(message));
 	
 	while(program_running == 1)
 	{
 		sys_ppu_thread_yield();
 		
-		Readline(conn_s, buffer, 2047);
-		
-		if(strlen(buffer) == 0)
+		if(Readline(conn_s, buffer, 2047) == 0 || strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
 		{
 			break;
 		}
@@ -185,12 +185,12 @@ static void handleclient(u64 t)
 			{
 				strcpy(login_user, buffer+5);
 				
-				sprintf(message, "331 Username %s OK\r\n", login_user);
+				sprintf(message, "331 Username %s OK. Password required\r\n", login_user);
 				Writeline(conn_s, message, strlen(message));
 			}
 			else
 			{
-				sprintf(message, "430 You must provide a username.\r\n");
+				sprintf(message, "430 No username specified\r\n");
 				Writeline(conn_s, message, strlen(message));
 			}
 		}
@@ -218,10 +218,6 @@ static void handleclient(u64 t)
 			
 			Writeline(conn_s, message, strlen(message));
 		}
-		else if(strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
-		{
-			break;
-		}
 		else if(authd == 0)
 		{
 			sprintf(message, "530 Not logged in\r\n");
@@ -248,6 +244,8 @@ static void handleclient(u64 t)
 		}
 		else if(strncmp(buffer, "PORT", 4) == 0)
 		{
+			rest = 0;
+			
 			char connectinfo[24];
 			strcpy(connectinfo, buffer+5);
 			
@@ -278,23 +276,23 @@ static void handleclient(u64 t)
 			
 			short int conn_port = (p1 * 256) + p2;
 			
-			struct sockaddr_in	servaddr;
-			
 			netClose(conn_s_data);
+			netClose(list_s_data);
 			
-			if((conn_s_data = netSocket(PF_INET, SOCK_STREAM, 0)) == 0)
+			list_s_data = -1;
+			conn_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
+			
+			struct sockaddr_in servaddr;
+			memset(&servaddr, 0, sizeof(servaddr));
+			servaddr.sin_family	= AF_INET;
+			servaddr.sin_port	= htons(conn_port);
+			inet_pton(AF_INET, conn_ipaddr, &servaddr.sin_addr);
+			
+			if(connect(conn_s_data, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
 			{
-				memset(&servaddr, 0, sizeof(servaddr));
-				servaddr.sin_family	= AF_INET;
-				servaddr.sin_port	= htons(conn_port);
-				inet_pton(AF_INET, conn_ipaddr, &servaddr.sin_addr);
-				
-				if(connect(conn_s_data, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
-				{
-					sprintf(message, "200 PORT command successful\r\n");
-					Writeline(conn_s, message, strlen(message));
-					continue;
-				}
+				sprintf(message, "200 PORT command successful\r\n");
+				Writeline(conn_s, message, strlen(message));
+				continue;
 			}
 			
 			sprintf(message, "425 Internal Error\r\n");
@@ -309,14 +307,33 @@ static void handleclient(u64 t)
 			
 			if(ret >= 0 && snf.local_adr.s_addr != 0)
 			{
+				netClose(conn_s_data);
+				netClose(list_s_data);
+				
+				conn_s_data = -1;
+				list_s_data = -1;
+				
+				// create the socket
+				list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
+
 				// calculate the passive mode port
-				srand((unsigned)time(NULL) + rand());
+				//srand((unsigned)time(NULL));
+				//srand((unsigned)time(NULL) + rand());
 				
 				int rand1 = 4 + rand() % 255;
 				int rand2 = rand() % 256;
 				
 				short int port = (rand1 * 256) + rand2;
 				
+				struct sockaddr_in servaddr;
+				memset(&servaddr, 0, sizeof(servaddr));
+				servaddr.sin_family      = AF_INET;
+				servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+				servaddr.sin_port        = htons(port);
+				
+				// bind address to listener, listen, and accept
+				netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr));
+				netListen(list_s_data, LISTENQ);
 				sprintf(message, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
 					(snf.local_adr.s_addr & 0xFF000000) >> 24,
 					(snf.local_adr.s_addr & 0xFF0000) >> 16,
@@ -324,51 +341,21 @@ static void handleclient(u64 t)
 					(snf.local_adr.s_addr & 0xFF),
 					rand1, rand2);
 				
-				struct sockaddr_in	servaddr;	// socket address structure
-				
-				netClose(conn_s_data);
-				netClose(list_s_data);
-				
-				if((list_s_data = netSocket(AF_INET, SOCK_STREAM, 0)) < 0)
+				Writeline(conn_s, message, strlen(message));
+						
+				if((conn_s_data = netAccept(list_s_data, NULL, NULL)) < 0)
 				{
-					// socket creation failed
-					printf("[%d] Cannot create listening socket.\n", errno);
+					printf("warning: failed to accept a connection\n");
+					netClose(conn_s_data);
+					netClose(list_s_data);
+					
+					conn_s_data = -1;
+					list_s_data = -1;
 				}
 				else
 				{
-					// set up socket address structure
-					memset(&servaddr, 0, sizeof(servaddr));
-					servaddr.sin_family      = AF_INET;
-					servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-					servaddr.sin_port        = htons(port);
-					
-					// bind address to listener
-					if(netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
-					{
-						// bind failed
-						printf("[%d] Cannot bind address to listening socket.\n", errno);
-					}
-					else
-					{
-						if(netListen(list_s_data, LISTENQ) < 0)
-						{
-							printf("[%d] Cannot start listener process.\n", errno);
-						}
-						else
-						{
-							Writeline(conn_s, message, strlen(message));
-							
-							if((conn_s_data = netAccept(list_s_data, NULL, NULL)) < 0)
-							{
-								printf("warning: failed to accept a connection\n");
-							}
-							else
-							{
-								// PASV success
-								continue;
-							}
-						}
-					}
+					// PASV success
+					continue;
 				}
 			}
 		
@@ -428,8 +415,6 @@ static void handleclient(u64 t)
 						break;
 					}
 				}
-				
-				lv2FsCloseDir(root);
 			}
 			
 			sprintf(message, "226 Transfer complete\r\n");
@@ -437,6 +422,11 @@ static void handleclient(u64 t)
 			
 			netClose(conn_s_data);
 			netClose(list_s_data);
+			
+			conn_s_data = -1;
+			list_s_data = -1;
+			
+			lv2FsCloseDir(root);
 		}
 		else if(strncmp(buffer, "PWD", 3) == 0)
 		{
@@ -458,7 +448,7 @@ static void handleclient(u64 t)
 			char filename[2048];
 			absPath(filename, buffer+5, cwd);
 
-			char buf[32768];
+			char buf[BUFFER_SIZE];
 			
 			u64 pos;
 			u64 read = -1;
@@ -470,19 +460,17 @@ static void handleclient(u64 t)
 			
 			lv2FsLSeek64(fd, (s64)rest, SEEK_SET, &pos);
 			
-			lv2FsRead(fd, buf, 32768, &read);
+			lv2FsRead(fd, buf, BUFFER_SIZE, &read);
 		
 			while((int)read > 0)
 			{
 				write = (u64)netSend(conn_s_data, buf, read, 0);
 				
-				if(write != read || lv2FsRead(fd, buf, 32768, &read) != 0)
+				if(write != read || lv2FsRead(fd, buf, BUFFER_SIZE, &read) != 0)
 				{
 					break;
 				}
 			}
-		
-			lv2FsClose(fd);
 		
 			if((int)read < 1)
 			{
@@ -497,6 +485,11 @@ static void handleclient(u64 t)
 			
 			netClose(conn_s_data);
 			netClose(list_s_data);
+			
+			conn_s_data = -1;
+			list_s_data = -1;
+			
+			lv2FsClose(fd);
 		}
 		else if(strncmp(buffer, "CWD", 3) == 0)
 		{
@@ -556,7 +549,7 @@ static void handleclient(u64 t)
 		else if(strncmp(buffer, "REST", 4) == 0)
 		{
 			rest = atoi(buffer+5);
-			sprintf(message, "200 REST is now %i\r\n", rest);
+			sprintf(message, "200 REST command successful\r\n");
 			Writeline(conn_s, message, strlen(message));
 		}
 		else if(strncmp(buffer, "DELE", 4) == 0)
@@ -587,7 +580,7 @@ static void handleclient(u64 t)
 			char path[2048];
 			absPath(path, buffer+5, cwd);
 		
-			char buf[32768];
+			char buf[BUFFER_SIZE];
 			
 			u64 pos;
 			u64 read = -1;
@@ -602,7 +595,7 @@ static void handleclient(u64 t)
 			
 			if(fd > 0)
 			{
-				while((int)(read = (u64)netRecv(conn_s_data, buf, 32768, MSG_WAITALL)) > 0)
+				while((int)(read = (u64)netRecv(conn_s_data, buf, BUFFER_SIZE, MSG_WAITALL)) > 0)
 				{
 					lv2FsWrite(fd, buf, read, &write);
 					
@@ -616,8 +609,6 @@ static void handleclient(u64 t)
 				{
 					write = read;
 				}
-	
-				lv2FsClose(fd);
 			}
 			else
 			{
@@ -632,6 +623,11 @@ static void handleclient(u64 t)
 			
 			netClose(conn_s_data);
 			netClose(list_s_data);
+			
+			conn_s_data = -1;
+			list_s_data = -1;
+
+			lv2FsClose(fd);
 		}
 		else if(strncmp(buffer, "MKD", 3) == 0)
 		{
@@ -662,7 +658,7 @@ static void handleclient(u64 t)
 			
 			Writeline(conn_s, message, strlen(message));
 		}
-		else if(strncmp(buffer, "SITE", 4) == 0)
+		else if(strncmp(buffer, "SITE", 4) == 0) // todo
 		{
 			if(strncmp(buffer+5, "CHMOD", 5) == 0)
 			{
@@ -670,9 +666,12 @@ static void handleclient(u64 t)
 				absPath(filename, buffer+16, cwd);
 			
 				int ret = exists(filename);
-			
+				
+				char perms[16];
+				sprintf(perms, "0%s", strndup(buffer+11, 3));
+				
 				if(ret == 0)
-					ret = lv2FsChmod(filename, atoi(strndup(buffer+11, 4)));
+					ret = lv2FsChmod(filename, atoi(perms));
 			
 				sprintf(message, "%i %s\r\n", 
 					(ret == 0)?250:550, 
@@ -751,48 +750,27 @@ static void handleclient(u64 t)
 	netClose(list_s_data);
 	netClose(conn_s);
 	
-	connections--;
-	
 	sys_ppu_thread_exit(0);
 }
 
-static void handleconnections(u64 t)
+static void handleconnections(u64 list_s_p)
 {
+	int list_s = (int)list_s_p;
+	int conn_s = -1;
+	
 	while(program_running == 1)
 	{
 		sys_ppu_thread_yield();
-
-		if(conn_s_idinc == MAXCONN)
-		{
-			conn_s_idinc = 0;
-		}
 		
-		if((conn_sa[conn_s_idinc] = netAccept(list_s, NULL, NULL)) < 0)
+		if((conn_s = netAccept(list_s, NULL, NULL)) > 0)
 		{
-			printf("warning: failed to accept a connection\n");
+			sys_ppu_thread_t id;
+			sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x10000, 0, "ClientCmdHandler");
 		}
 		else
 		{
-			char* message;
-			
-			if(connections >= MAXCONN)
-			{
-				// drop client due to client limit
-				message = "530 Maximum number of clients exceeded.\r\n";
-				Writeline(conn_sa[conn_s_idinc], message, strlen(message));
-				netClose(conn_sa[conn_s_idinc]);
-				conn_sa[conn_s_idinc] = 0;
-			}
-			else
-			{
-				sys_ppu_thread_t id;
-				char *thread_name = "ClientCmdHandler";
-				
-				sys_ppu_thread_create(&id, handleclient, 0x1337, 1500, 0x10000, 0, thread_name);
-				
-				message = "220 OpenPS3FTP by @jjolano\r\n";
-				Writeline(conn_sa[conn_s_idinc], message, strlen(message));
-			}
+			printf("warning: failed to accept a connection\n");
+			netClose(conn_s);
 		}
 	}
 	
@@ -801,59 +779,41 @@ static void handleconnections(u64 t)
 
 int main(int argc, const char* argv[])
 {
-	struct sockaddr_in	servaddr;	// socket address structure
+	printf("OpenPS3FTP by @jjolano\nVersion %s\n\nInitializing modules...\n", VERSION);
 	
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_WHITE, res.width, res.height);
-	
-	printf("OpenPS3FTP v1.0 by @jjolano\n\n");
-
+	ioPadInit(7);
 	netInitialize();
 	
-	if((list_s = netSocket(AF_INET, SOCK_STREAM, 0)) < 0)
-	{
-		// socket creation failed
-		printf("[%d] Cannot create listening socket.\n", errno);
-	}
-	else
-	{
-		short int port = FTPPORT;
-		
-		// set up socket address structure
-		memset(&servaddr, 0, sizeof(servaddr));
-		servaddr.sin_family      = AF_INET;
-		servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-		servaddr.sin_port        = htons(port);
-		
-		// bind address to listener
-		if(netBind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
-		{
-			// bind failed
-			printf("[%d] Cannot bind address to listening socket.\n", errno);
-		}
-		else
-		{
-			if(netListen(list_s, LISTENQ) < 0)
-			{
-				printf("[%d] Cannot start listener process.\n", errno);
-			}
-			else
-			{
-				sys_ppu_thread_t id;
-				char *thread_name = "ConnectionHandler";
-				
-				sys_ppu_thread_create(&id, handleconnections, 0x1337, 1500, 0x10000, 0, thread_name);
-				
-				printf("FTP server started on port %i.\n", FTPPORT);
-			}
-		}
-	}
+	int list_s;
+	short int port = FTPPORT;
+	struct sockaddr_in servaddr;
+	
+	// set up socket address structure
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin_family      = AF_INET;
+	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	servaddr.sin_port        = htons(port);
+	
+	// create listener socket
+	list_s = netSocket(AF_INET, SOCK_STREAM, 0);
+	
+	// bind address to listener and start listening
+	netBind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr));
+	netListen(list_s, LISTENQ);
+	
+	sys_ppu_thread_t id;
+	sys_ppu_thread_create(&id, handleconnections, (u64)list_s, 1500, 0x1000, 0, "ConnectionHandler");
+	
+	printf("Listener socket started at port %i\n", port);
 	
 	PadInfo padinfo;
 	PadData paddata;
-	ioPadInit(7);
-
 	int i, x, j;
+	
+	char version[64];
+	sprintf(version, "Version %s", VERSION);
 	
 	while(program_running == 1)
 	{
@@ -872,7 +832,7 @@ int main(int argc, const char* argv[])
 		}
 		
 		waitFlip();
-
+		
 		for(x = 0; x < res.height; x++)
 		{
 			for(j = 0; j < res.width; j++)
@@ -881,10 +841,11 @@ int main(int argc, const char* argv[])
 			}
 		}
    		
-		print(50, 50, "OpenPS3FTP v1.0 by @jjolano", buffers[currentBuffer]->ptr);
-		print(50, 200, "FTP server is now running.", buffers[currentBuffer]->ptr);
+		print(50, 50, "OpenPS3FTP by @jjolano", buffers[currentBuffer]->ptr);
+		print(50, 100, version, buffers[currentBuffer]->ptr);
+		print(50, 200, "FTP server is active.", buffers[currentBuffer]->ptr);
 		print(50, 300, "Press X to quit", buffers[currentBuffer]->ptr);
-
+		
 		flip(currentBuffer);
 		currentBuffer = !currentBuffer;
 	}
@@ -892,7 +853,7 @@ int main(int argc, const char* argv[])
 	netClose(list_s);
 	netDeinitialize();
 	ioPadEnd();
-	printf("Process completed");
+	
+	printf("Process completed\n");
 	return 0;
 }
-
