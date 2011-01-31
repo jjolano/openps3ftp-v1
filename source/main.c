@@ -27,16 +27,18 @@
 #include <arpa/inet.h>
 #include <net/net.h>
 #include <io/pad.h>
+#include <netdb.h>
 
 #include "helper.h"
 #include "sconsole.h"
 
 #include <sysutil/events.h>
 
-#define	FTPPORT		21
-#define BUFFER_SIZE	16384 // the buffer size used in file transfers
+#define FTPPORT		21	// port to start ftp server on
+#define BUFFER_SIZE	16384	// the buffer size used in file transfers
+#define RESTRICT_LOGIN	1	// 1 to enable, 0 to disable the login details requirement
 
-const char* VERSION		= "1.1";
+const char* VERSION		= "1.2";
 
 const char* LOGIN_USERNAME	= "root";
 const char* LOGIN_PASSWORD	= "openbox";
@@ -58,15 +60,15 @@ buffer *buffers[2];
 
 void eventHandler(u64 status, u64 param, void * userdata)
 {
-    if (status == EVENT_REQUEST_EXITAPP) //0x101
-    {
-        exit(0);
-    }
+	if(status == EVENT_REQUEST_EXITAPP) // 0x101
+	{
+		program_running = 0;
+	}
 }
 
 void waitFlip()
 {
-	// Block the PPU thread untill the previous flip operation has finished.
+	// Block the PPU thread until the previous flip operation has finished.
 	while (gcmGetFlipStatus() != 0)
 		usleep(200);
 	gcmResetFlipStatus();
@@ -167,20 +169,18 @@ static void handleclient(u64 conn_s_p)
 	
 	char	message[4096];
 	char	buffer[2048];
+	int	len;
 	
 	sprintf(cwd, "/");
 	
-	sprintf(message, "220-OpenPS3FTP by @jjolano\r\n");
-	Writeline(conn_s, message, strlen(message));
+	swritel(conn_s, "220-OpenPS3FTP by @jjolano\r\n");
 	
 	sprintf(message, "220 Version %s\r\n", VERSION);
-	Writeline(conn_s, message, strlen(message));
+	swritel(conn_s, message);
 	
-	while(program_running == 1)
+	while(program_running)
 	{
-		sys_ppu_thread_yield();
-		
-		if(Readline(conn_s, buffer, 2047) == 0 || strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
+		if((len = sreadl(conn_s, buffer, 2047)) <= 0 || strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
 		{
 			break;
 		}
@@ -190,66 +190,48 @@ static void handleclient(u64 conn_s_p)
 		
 		if(strncmp(buffer, "USER", 4) == 0)
 		{
-			if(strlen(buffer) > 7)
+			if(len > 6)
 			{
 				strcpy(login_user, buffer+5);
 				
 				sprintf(message, "331 Username %s OK. Password required\r\n", login_user);
-				Writeline(conn_s, message, strlen(message));
+				swritel(conn_s, message);
+				continue;
 			}
-			else
-			{
-				sprintf(message, "430 No username specified\r\n");
-				Writeline(conn_s, message, strlen(message));
-			}
+			
+			swritel(conn_s, "430 No username specified\r\n");
 		}
 		else if(strncmp(buffer, "PASS", 4) == 0)
 		{
-			if(strlen(buffer) > 7)
+			if(len > 6)
 			{
 				strcpy(login_pass, buffer+5);
 				
-				if(strcmp(LOGIN_USERNAME, login_user) == 0 && strcmp(LOGIN_PASSWORD, login_pass) == 0)
+				if((strcmp(LOGIN_USERNAME, login_user) == 0 && strcmp(LOGIN_PASSWORD, login_pass) == 0) || !RESTRICT_LOGIN)
 				{
 					authd = 1;
-					sprintf(message, "230 Successful authentication\r\n");
+					swritel(conn_s, "230 Successful authentication\r\n");
+					continue;
 				}
-				else
-				{
-					sprintf(message, "430 Invalid username or password\r\n");
-					Writeline(conn_s, message, strlen(message));
-				}
-			}
-			else
-			{
-				sprintf(message, "430 Invalid username or password\r\n");
 			}
 			
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "430 Invalid username or password\r\n");
 		}
 		else if(authd == 0)
 		{
-			sprintf(message, "530 Not logged in\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "530 Not logged in\r\n");
 		}
 		else if(strncmp(buffer, "FEAT", 4) == 0)
 		{
-			sprintf(message, "211-Extensions supported:\r\n");
-			Writeline(conn_s, message, strlen(message));
-			
-			sprintf(message, " SIZE\r\n");
-			Writeline(conn_s, message, strlen(message));
-			sprintf(message, " PASV\r\n");
-			Writeline(conn_s, message, strlen(message));
-			
-			
-			sprintf(message, "211 End\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "211-Extensions supported:\r\n");
+			swritel(conn_s, " SIZE\r\n");
+			swritel(conn_s, " PASV\r\n");
+			swritel(conn_s, "211 End\r\n");
 		}
 		else if(strncmp(buffer, "TYPE", 4) == 0)
 		{
 			sprintf(message, "200 TYPE is now %s\r\n", buffer+5);
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "PORT", 4) == 0)
 		{
@@ -299,13 +281,14 @@ static void handleclient(u64 conn_s_p)
 			
 			if(connect(conn_s_data, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
 			{
-				sprintf(message, "200 PORT command successful\r\n");
-				Writeline(conn_s, message, strlen(message));
+				swritel(conn_s, "200 PORT command successful\r\n");
 				continue;
 			}
 			
-			sprintf(message, "425 Internal Error\r\n");
-			Writeline(conn_s, message, strlen(message));
+			netClose(conn_s_data);
+			conn_s_data = -1;
+			
+			swritel(conn_s, "425 Internal Error\r\n");
 		}
 		else if(strncmp(buffer, "PASV", 4) == 0)
 		{
@@ -324,12 +307,11 @@ static void handleclient(u64 conn_s_p)
 				
 				// create the socket
 				list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
-
-				// calculate the passive mode port
-				//srand((unsigned)time(NULL));
-				//srand((unsigned)time(NULL) + rand());
 				
-				int rand1 = 4 + rand() % 255;
+				// calculate the passive mode port
+				srand((unsigned)time(NULL) + rand());
+				
+				int rand1 = (rand() % 251) + 4;
 				int rand2 = rand() % 256;
 				
 				short int port = (rand1 * 256) + rand2;
@@ -340,9 +322,10 @@ static void handleclient(u64 conn_s_p)
 				servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 				servaddr.sin_port        = htons(port);
 				
-				// bind address to listener, listen, and accept
+				// bind address to listener and listen
 				netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr));
-				netListen(list_s_data, LISTENQ);
+				netListen(list_s_data, 1);
+				
 				sprintf(message, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
 					(snf.local_adr.s_addr & 0xFF000000) >> 24,
 					(snf.local_adr.s_addr & 0xFF0000) >> 16,
@@ -350,43 +333,28 @@ static void handleclient(u64 conn_s_p)
 					(snf.local_adr.s_addr & 0xFF),
 					rand1, rand2);
 				
-				Writeline(conn_s, message, strlen(message));
+				swritel(conn_s, message);
 						
-				if((conn_s_data = netAccept(list_s_data, NULL, NULL)) < 0)
-				{
-					printf("warning: failed to accept a connection\n");
-					netClose(conn_s_data);
-					netClose(list_s_data);
-					
-					conn_s_data = -1;
-					list_s_data = -1;
-				}
-				else
-				{
-					// PASV success
-					continue;
-				}
+				conn_s_data = netAccept(list_s_data, NULL, NULL);
+				
+				continue;
 			}
 		
-		sprintf(message, "425 Internal Error\r\n");
-		Writeline(conn_s, message, strlen(message));
+		swritel(conn_s, "425 Internal Error\r\n");
 		}
 		else if(strncmp(buffer, "SYST", 4) == 0)
 		{
-			sprintf(message, "215 UNIX Type: L8\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "215 UNIX Type: L8\r\n");
 		}
 		else if(strncmp(buffer, "LIST", 4) == 0)
 		{
 			if(conn_s_data == -1)
 			{
-				sprintf(message, "425 No data connection\r\n");
-				Writeline(conn_s, message, strlen(message));
+				swritel(conn_s, "425 No data connection\r\n");
 				continue;
 			}
 			
-			sprintf(message, "150 Accepted data connection\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "150 Opening data connection\r\n");
 			
 			int root;
 			if(lv2FsOpenDir(cwd, &root) == 0)
@@ -409,7 +377,7 @@ static void handleclient(u64 conn_s_p)
 					struct tm *tm;
 					char timebuf[80];
 					tm = localtime(&entry.st_mtime);
-					strftime(timebuf, 80, "%b %d %Y", tm);
+					strftime(timebuf, 80, "%Y-%m-%d %H:%M", tm);
 		
 					sprintf(message, "%srw-rw-rw-   1 root  root        %lu %s %s\r\n", 
 						((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
@@ -417,7 +385,7 @@ static void handleclient(u64 conn_s_p)
 						timebuf, 
 						ent.d_name);
 					
-					Writeline(conn_s_data, message, strlen(message));
+					swritel(conn_s_data, message);
 					
 					if(lv2FsReadDir(root, &ent, &read) != 0)
 					{
@@ -426,8 +394,7 @@ static void handleclient(u64 conn_s_p)
 				}
 			}
 			
-			sprintf(message, "226 Transfer complete\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "226 Transfer complete\r\n");
 			
 			netClose(conn_s_data);
 			netClose(list_s_data);
@@ -440,19 +407,17 @@ static void handleclient(u64 conn_s_p)
 		else if(strncmp(buffer, "PWD", 3) == 0)
 		{
 			sprintf(message, "257 \"%s\" is the current directory\r\n", cwd);
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "RETR", 4) == 0)
 		{
 			if(conn_s_data == -1)
 			{
-				sprintf(message, "425 No data connection\r\n");
-				Writeline(conn_s, message, strlen(message));
+				swritel(conn_s, "425 No data connection\r\n");
 				continue;
 			}
 			
-			sprintf(message, "150 Opening data connection\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "150 Opening data connection\r\n");
 			
 			char filename[2048];
 			absPath(filename, buffer+5, cwd);
@@ -490,7 +455,7 @@ static void handleclient(u64 conn_s_p)
 				(write == read)?226:426, 
 				(write == read)?"Transfer complete":"Transfer aborted");
 		
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 			
 			netClose(conn_s_data);
 			netClose(list_s_data);
@@ -504,7 +469,7 @@ static void handleclient(u64 conn_s_p)
 		{
 			if(buffer[4] == '/')
 			{
-				if(strlen(buffer) == 5)
+				if(len == 5)
 				{
 					strcpy(cwd, "/");
 				}
@@ -532,7 +497,7 @@ static void handleclient(u64 conn_s_p)
 				sprintf(message, "550 Could not change directory: %s\r\n", cwd);
 			}
 		
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "CDUP", 4) == 0)
 		{
@@ -553,13 +518,12 @@ static void handleclient(u64 conn_s_p)
 			strcat(message, cwd);
 			strcat(message, "\r\n");
 		
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "REST", 4) == 0)
 		{
 			rest = atoi(buffer+5);
-			sprintf(message, "200 REST command successful\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "200 REST command successful\r\n");
 		}
 		else if(strncmp(buffer, "DELE", 4) == 0)
 		{
@@ -572,19 +536,17 @@ static void handleclient(u64 conn_s_p)
 				(ret == 0)?250:550, 
 				(ret == 0)?"File successfully deleted":"Could not delete file");
 			
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "STOR", 4) == 0)
 		{
 			if(conn_s_data == -1)
 			{
-				sprintf(message, "425 No data connection\r\n");
-				Writeline(conn_s, message, strlen(message));
+				swritel(conn_s, "425 No data connection\r\n");
 				continue;
 			}
 
-			sprintf(message, "150 Opening data connection\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "150 Opening data connection\r\n");
 		
 			char path[2048];
 			absPath(path, buffer+5, cwd);
@@ -628,7 +590,7 @@ static void handleclient(u64 conn_s_p)
 				(write == read)?226:426, 
 				(write == read)?"Transfer complete":"Transfer aborted");
 		
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 			
 			netClose(conn_s_data);
 			netClose(list_s_data);
@@ -649,7 +611,7 @@ static void handleclient(u64 conn_s_p)
 				(ret == 0)?250:550, 
 				(ret == 0)?"Directory successfully created":"Could not create directory");
 			
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "RMD", 3) == 0)
 		{
@@ -665,7 +627,7 @@ static void handleclient(u64 conn_s_p)
 				(ret == 0)?250:550, 
 				(ret == 0)?"Directory successfully deleted":"Could not delete directory");
 			
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "SITE", 4) == 0) // todo
 		{
@@ -680,13 +642,14 @@ static void handleclient(u64 conn_s_p)
 				sprintf(perms, "0%s", strndup(buffer+11, 3));
 				
 				if(ret == 0)
-					ret = lv2FsChmod(filename, atoi(perms));
+					ret = lv2FsChmod(filename, S_IFMT | atol(perms));
 			
-				sprintf(message, "%i %s\r\n", 
+				sprintf(message, "%i %s (%s)\r\n", 
 					(ret == 0)?250:550, 
-					(ret == 0)?"File permissions successfully set":"Failed to set file permissions");
+					(ret == 0)?"File permissions successfully set":"Failed to set file permissions",
+					perms);
 				
-				Writeline(conn_s, message, strlen(message));
+				swritel(conn_s, message);
 			}
 		}
 		else if(strncmp(buffer, "RNFR", 4) == 0)
@@ -700,7 +663,7 @@ static void handleclient(u64 conn_s_p)
 				(ret == 0)?350:550, 
 				(ret == 0)?"File exists - ready for destination":"File does not exist");
 		
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "RNTO", 4) == 0)
 		{
@@ -718,7 +681,7 @@ static void handleclient(u64 conn_s_p)
 				(ret == 0)?250:550, 
 				(ret == 0)?"File successfully renamed":"Target file already exists or renaming failed");
 			
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "SIZE", 4) == 0)
 		{
@@ -738,22 +701,19 @@ static void handleclient(u64 conn_s_p)
 				sprintf(message, "550 Requested file doesn't exist\r\n");
 			}
 		
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, message);
 		}
 		else if(strncmp(buffer, "NOOP", 4) == 0)
 		{
-			sprintf(message, "200 Zzzz...\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "200 Zzzz...\r\n");
 		}
 		else
 		{
-			sprintf(message, "502 Command not implemented\r\n");
-			Writeline(conn_s, message, strlen(message));
+			swritel(conn_s, "502 Command not implemented\r\n");
 		}
 	}
 	
-	sprintf(message, "221 Goodbye.\r\n");
-	Writeline(conn_s, message, strlen(message));
+	swritel(conn_s, "221 See you later.\r\n");
 	
 	netClose(conn_s_data);
 	netClose(list_s_data);
@@ -765,22 +725,11 @@ static void handleclient(u64 conn_s_p)
 static void handleconnections(u64 list_s_p)
 {
 	int list_s = (int)list_s_p;
-	int conn_s = -1;
 	
-	while(program_running == 1)
+	while(program_running)
 	{
-		sys_ppu_thread_yield();
-		
-		if((conn_s = netAccept(list_s, NULL, NULL)) > 0)
-		{
-			sys_ppu_thread_t id;
-			sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x10000, 0, "ClientCmdHandler");
-		}
-		else
-		{
-			printf("warning: failed to accept a connection\n");
-			netClose(conn_s);
-		}
+		sys_ppu_thread_t id;
+		sys_ppu_thread_create(&id, handleclient, (u64)netAccept(list_s, NULL, NULL), 1500, 0x10000, 0, "ClientCmdHandler");
 	}
 	
 	sys_ppu_thread_exit(0);
@@ -812,10 +761,10 @@ int main(int argc, const char* argv[])
 	
 	// bind address to listener and start listening
 	netBind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr));
-	netListen(list_s, LISTENQ);
+	netListen(list_s, 50);
 	
 	sys_ppu_thread_t id;
-	sys_ppu_thread_create(&id, handleconnections, (u64)list_s, 1500, 0x1000, 0, "ConnectionHandler");
+	sys_ppu_thread_create(&id, handleconnections, (u64)list_s, 1500, 0x10000, 0, "ConnectionHandler");
 	
 	printf("Listener socket started at port %i\n", port);
 	
@@ -826,7 +775,10 @@ int main(int argc, const char* argv[])
 	char version[64];
 	sprintf(version, "Version %s", VERSION);
 	
-	while(program_running == 1)
+	char status[64];
+	sprintf(status, "FTP active. IP: coming soon, check xmb network settings (port %i)", port);
+	
+	while(program_running)
 	{
 		sysCheckCallback();
 		ioPadGetInfo(&padinfo);
@@ -855,7 +807,7 @@ int main(int argc, const char* argv[])
    		
 		print(50, 50, "OpenPS3FTP by @jjolano", buffers[currentBuffer]->ptr);
 		print(50, 100, version, buffers[currentBuffer]->ptr);
-		print(50, 200, "FTP server is active.", buffers[currentBuffer]->ptr);
+		print(50, 200, status, buffers[currentBuffer]->ptr);
 		print(50, 300, "Press X to quit", buffers[currentBuffer]->ptr);
 		
 		flip(currentBuffer);
@@ -866,6 +818,10 @@ int main(int argc, const char* argv[])
 	netDeinitialize();
 	ioPadEnd();
 	
+	free(buffers[0]);
+	free(buffers[1]);
+	
 	printf("Process completed\n");
 	return 0;
 }
+

@@ -1,3 +1,10 @@
+[Version 1.2 - January 30, 2011]
+- Added XMB exit event handling (thanks facanferff)
+- Cleaned up and shortened some code
+- Fixed up the last modified date in directory listings
+- Added an option to disable the login checking (at compile time)
+- Fixed a small bug in passive mode which made the transfer fail
+
 [Version 1.1 - January 29, 2011]
 - More stability and better performance
 - Cleaned up some code
