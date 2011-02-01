@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sfo>
-	<value name="APP_VER" type="string">01.02</value>
+	<value name="APP_VER" type="string">01.03</value>
 	<value name="ATTRIBUTE" type="integer">
 		0
 	</value>
@@ -31,5 +31,5 @@
 	<value name="TITLE_ID" type="string">
 		OFTP00001
 	</value>
-	<value name="VERSION" type="string">01.02</value>
+	<value name="VERSION" type="string">01.03</value>
 </sfo>
