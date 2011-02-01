@@ -1,9 +1,15 @@
-[Version 1.3 - February 1, 2011]
+[Version 1.3 - 2011]
 - New command parser
+- File transfers are more reliable
+- Fixed some server return codes
 - IP address of the PS3 now displays on-screen
-- Added users file support
-- Passwords are now hashed with md5
+- Added password change command (see readme)
+- Optimized some code
+- Simplified the transfer functions
+- CHMOD function now works
+- File permissions now show correctly in directory listings
 - Now licensed under the GPL
+- Support for MLSD, MLST, and NLST commands
 
 [Version 1.2 - January 30, 2011]
 - Added XMB exit event handling (thanks facanferff)

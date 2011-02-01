@@ -17,7 +17,7 @@
 #define BUFFER_SIZE	16384	// the buffer size used in file transfers
 #define LOGIN_CHECK	1	// 1 to enable, 0 to disable the login checking
 
-const char* VERSION = "1.3";	// used in the welcome message and displayed on-screen
+const char* VERSION = "1.3 (develop)";	// used in the welcome message and displayed on-screen
 
 #include <stdio.h>
 #include <unistd.h>
@@ -56,12 +56,13 @@ static char *client_cmds[] =
 	"USER", "PASS", "QUIT", "PASV", "PORT", "SITE", "FEAT",
 	"TYPE", "REST", "RETR", "PWD", "CWD", "CDUP", "NLST",
 	"LIST", "STOR", "NOOP", "DELE", "MKD", "RMD", "RNFR",
-	"RNTO", "SIZE", "SYST", "HELP", "PASSWD"
+	"RNTO", "SIZE", "SYST", "HELP", "PASSWD", "MLSD", "MLST"
 };
 
 static char *feat_cmds[] =
 {
-	"PASV", "SIZE", "REST STREAM", "PASSWD"
+	"PASV", "SIZE", "REST STREAM", "SITE CHMOD", "PASSWD",
+	"MLSD", "MLST type*;size*;modify*;UNIX.mode*;UNIX.uid*;UNIX.gid*;"
 };
 
 const int client_cmds_count	= sizeof(client_cmds)	/ sizeof(char *);
@@ -167,7 +168,7 @@ static void handleclient(u64 conn_s_p)
 	int	authd = 0;
 	int	active = 1;
 	
-	char	buffer[2048];
+	char	buffer[1024];
 	ssize_t	bytes;
 	
 	// start directory
@@ -178,17 +179,11 @@ static void handleclient(u64 conn_s_p)
 	sprintf(buffer, "220 Version %s\r\n", VERSION);
 	swritel(conn_s, buffer);
 	
-	// assign a random port for passive mode
-	srand((unsigned)time(NULL));
-	
-	int rand1 = (rand() % 251) + 4;
-	int rand2 = rand() % 256;
-	
-	short int pasvport = (rand1 * 256) + rand2;
+	bytes = sreadl(conn_s, buffer, 1023);
 	
 	while(program_running && active)
 	{
-		if((bytes = sreadl(conn_s, buffer, 2047)) <= 0)
+		if(bytes <= 0)
 		{
 			// client disconnected
 			break;
@@ -203,9 +198,9 @@ static void handleclient(u64 conn_s_p)
 		int p = 0;
 		int c;
 		int cmd_id = -1;
-		char client_cmd[8][256];
+		char client_cmd[4][256];
 		
-		for(c = 0; (c < bytes && parameter_count < 8); c++)
+		for(c = 0; (c < bytes && parameter_count < 4); c++)
 		{
 			if(buffer[c] == ' ')
 			{
@@ -343,6 +338,8 @@ static void handleclient(u64 conn_s_p)
 				
 				if(ret >= 0 && snf.local_adr.s_addr != 0)
 				{
+					netShutdown(conn_s_data, 2);
+					netShutdown(list_s_data, 2);
 					netClose(conn_s_data);
 					netClose(list_s_data);
 					
@@ -351,6 +348,14 @@ static void handleclient(u64 conn_s_p)
 					
 					// create the socket
 					list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
+
+					// assign a random port for passive mode
+					srand((unsigned)time(NULL) + rand());
+					
+					int rand1 = (rand() % 251) + 4;
+					int rand2 = rand() % 256;
+					
+					short int pasvport = (rand1 * 256) + rand2;
 					
 					struct sockaddr_in servaddr;
 					memset(&servaddr, 0, sizeof(servaddr));
@@ -413,6 +418,8 @@ static void handleclient(u64 conn_s_p)
 					
 					short int conn_port = (p1 * 256) + p2;
 					
+					netShutdown(conn_s_data, 2);
+					netShutdown(list_s_data, 2);
 					netClose(conn_s_data);
 					netClose(list_s_data);
 					
@@ -431,6 +438,7 @@ static void handleclient(u64 conn_s_p)
 						break;
 					}
 					
+					netShutdown(conn_s_data, 2);
 					netClose(conn_s_data);
 					conn_s_data = -1;
 					
@@ -442,7 +450,36 @@ static void handleclient(u64 conn_s_p)
 				}
 				break;
 				case 5: // SITE
-				// todo: chmod
+				stoupper(client_cmd[1]);
+				
+				if(strcmp(client_cmd[1], "CHMOD") == 0)
+				{
+					char filename[256];
+					absPath(filename, client_cmd[3], cwd);
+					
+					char perms[4];
+					sprintf(perms, "0%s", client_cmd[2]);
+					
+					int ret = exists(filename);
+					
+					if(ret == 0)
+					{
+						ret = lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8));
+					}
+					
+					if(ret == 0)
+					{
+						swritel(conn_s, "250 File permissions successfully set\r\n");
+					}
+					else
+					{
+						swritel(conn_s, "550 Failed to set file permissions\r\n");
+					}
+				}
+				else
+				{
+					swritel(conn_s, "500 Unrecognized SITE command\r\n");
+				}
 				break;
 				case 6: // FEAT
 				swritel(conn_s, "211-Extensions supported:\r\n");
@@ -488,35 +525,35 @@ static void handleclient(u64 conn_s_p)
 					
 					u64 pos;
 					u64 read = -1;
-					u64 write = -1;
 					
 					Lv2FsFile fd;
 					
 					lv2FsOpen(filename, LV2_O_RDONLY, &fd, 0, NULL, 0);
 					lv2FsLSeek64(fd, (s64)rest, SEEK_SET, &pos);
-					lv2FsRead(fd, buf, BUFFER_SIZE, &read);
 					
-					while((int)read > 0)
+					if(fd >= 0)
 					{
-						write = (u64)netSend(conn_s_data, buf, read, 0);
-						
-						if(write != read || lv2FsRead(fd, buf, BUFFER_SIZE, &read) != 0)
+						while(lv2FsRead(fd, buf, BUFFER_SIZE, &read) == 0 && read > 0)
 						{
-							break;
+							netSend(conn_s_data, buf, read, 0);
+						}
+						
+						if(read == 0)
+						{
+							swritel(conn_s, "226 Transfer complete\r\n");
+						}
+						else
+						{
+							swritel(conn_s, "426 Transfer aborted\r\n");
 						}
 					}
-					
-					if((int)read < 1)
+					else
 					{
-						read = write;
+						swritel(conn_s, "452 File access error\r\n");
 					}
 					
-					sprintf(buffer, "%i %s\r\n", 
-						(write == read)?226:426, 
-						(write == read)?"Transfer complete":"Transfer aborted");
-					
-					swritel(conn_s, buffer);
-					
+					netShutdown(conn_s_data, 2);
+					netShutdown(list_s_data, 2);
 					netClose(conn_s_data);
 					netClose(list_s_data);
 					
@@ -620,22 +657,17 @@ static void handleclient(u64 conn_s_p)
 					u64 read;
 					Lv2FsDirent ent;
 					
-					lv2FsReadDir(diro, &ent, &read);
-					
-					while(read != 0)
+					while(lv2FsReadDir(diro, &ent, &read) == 0 && read != 0)
 					{
 						sprintf(buffer, "%s\r\n", ent.d_name);
 						swritel(conn_s_data, buffer);
-						
-						if(lv2FsReadDir(diro, &ent, &read) != 0)
-						{
-							break;
-						}
 					}
 				}
 				
 				swritel(conn_s, "226 Transfer complete\r\n");
 				
+				netShutdown(conn_s_data, 2);
+				netShutdown(list_s_data, 2);
 				netClose(conn_s_data);
 				netClose(list_s_data);
 				
@@ -670,11 +702,9 @@ static void handleclient(u64 conn_s_p)
 					u64 read;
 					Lv2FsDirent ent;
 					
-					lv2FsReadDir(root, &ent, &read);
-					
 					char path[256];
 					
-					while(read != 0)
+					while(lv2FsReadDir(root, &ent, &read) == 0 && read != 0)
 					{
 						strcpy(path, cwd);
 						strcat(path, ent.d_name);
@@ -687,23 +717,29 @@ static void handleclient(u64 conn_s_p)
 						tm = localtime(&entry.st_mtime);
 						strftime(timebuf, 80, "%Y-%m-%d %H:%M", tm);
 						
-						sprintf(buffer, "%srw-rw-rw-   1 root  root        %lu %s %s\r\n", 
+						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s   1 root  root        %lu %s %s\r\n", 
 							((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
+							((entry.st_mode & S_IRUSR) != 0)?"r":"-",
+							((entry.st_mode & S_IWUSR) != 0)?"w":"-",
+							((entry.st_mode & S_IXUSR) != 0)?"x":"-",
+							((entry.st_mode & S_IRGRP) != 0)?"r":"-",
+							((entry.st_mode & S_IWGRP) != 0)?"w":"-",
+							((entry.st_mode & S_IXGRP) != 0)?"x":"-",
+							((entry.st_mode & S_IROTH) != 0)?"r":"-",
+							((entry.st_mode & S_IWOTH) != 0)?"w":"-",
+							((entry.st_mode & S_IXOTH) != 0)?"x":"-",
 							(long unsigned int)entry.st_size, 
 							timebuf, 
 							ent.d_name);
-						
+
 						swritel(conn_s_data, buffer);
-						
-						if(lv2FsReadDir(root, &ent, &read) != 0)
-						{
-							break;
-						}
 					}
 				}
 				
 				swritel(conn_s, "226 Transfer complete\r\n");
 				
+				netShutdown(conn_s_data, 2);
+				netShutdown(list_s_data, 2);
 				netClose(conn_s_data);
 				netClose(list_s_data);
 				
@@ -733,15 +769,21 @@ static void handleclient(u64 conn_s_p)
 					u64 write = -1;
 					
 					Lv2FsFile fd;
+					s32 oflags = LV2_O_WRONLY | LV2_O_CREAT;
 					
-					lv2FsOpen(path, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
+					if(rest == 0)
+					{
+						oflags |= LV2_O_TRUNC;
+					}
+					
+					lv2FsOpen(path, oflags, &fd, 0, NULL, 0);
 					lv2FsChmod(path, S_IFMT | 0666);
 					
 					lv2FsLSeek64(fd, (s32)rest, SEEK_SET, &pos);
-					
-					if(fd > 0)
+						
+					if(fd >= 0)
 					{
-						while((int)(read = (u64)netRecv(conn_s_data, buf, BUFFER_SIZE, MSG_WAITALL)) > 0)
+						while((read = (u64)netRecv(conn_s_data, buf, BUFFER_SIZE, MSG_WAITALL)) > 0)
 						{
 							lv2FsWrite(fd, buf, read, &write);
 							
@@ -750,23 +792,23 @@ static void handleclient(u64 conn_s_p)
 								break;
 							}
 						}
-			
-						if((int)read <= 0)
+						
+						if(read == 0)
 						{
-							write = read;
+							swritel(conn_s, "226 Transfer complete\r\n");
+						}
+						else
+						{
+							swritel(conn_s, "426 Transfer aborted\r\n");
 						}
 					}
 					else
 					{
-						write = 1;
+						swritel(conn_s, "452 File access error\r\n");
 					}
 					
-					sprintf(buffer, "%i %s\r\n", 
-						(write == read)?226:426, 
-						(write == read)?"Transfer complete":"Transfer aborted");
-					
-					swritel(conn_s, buffer);
-					
+					netShutdown(conn_s_data, 2);
+					netShutdown(list_s_data, 2);
 					netClose(conn_s_data);
 					netClose(list_s_data);
 					
@@ -944,12 +986,159 @@ static void handleclient(u64 conn_s_p)
 					swritel(conn_s, "501 Invalid password\r\n");
 				}
 				break;
+				case 26: // MLSD
+				if(conn_s_data == -1)
+				{
+					swritel(conn_s, "425 No data connection\r\n");
+					break;
+				}
+				
+				swritel(conn_s, "150 Opening data connection\r\n");
+				
+				char dirs[256];
+				
+				if(parameter_count == 1)
+				{
+					absPath(dirs, client_cmd[1], cwd);
+				}
+				else
+				{
+					strcpy(dirs, cwd);
+				}
+				
+				int fdd;
+				if(lv2FsOpenDir(dirs, &fdd) == 0)
+				{
+					u64 read;
+					Lv2FsDirent ent;
+					
+					char path[256];
+					
+					while(lv2FsReadDir(fdd, &ent, &read) == 0 && read != 0)
+					{
+						strcpy(path, cwd);
+						strcat(path, ent.d_name);
+						
+						struct stat entry; 
+						stat(path, &entry);
+						
+						struct tm *tm;
+						char timebuf[80];
+						tm = localtime(&entry.st_mtime);
+						strftime(timebuf, 80, "%Y%m%d%H%M%S", tm);
+						
+						int permint = 0;
+
+						permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0;
+						permint +=	((entry.st_mode & S_IWUSR) != 0)?200:0;
+						permint +=	((entry.st_mode & S_IXUSR) != 0)?100:0;
+						
+						permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0;
+						permint +=	((entry.st_mode & S_IWGRP) != 0)?20:0;
+						permint +=	((entry.st_mode & S_IXGRP) != 0)?10:0;
+						
+						permint +=	((entry.st_mode & S_IROTH) != 0)?4:0;
+						permint +=	((entry.st_mode & S_IWOTH) != 0)?2:0;
+						permint +=	((entry.st_mode & S_IXOTH) != 0)?1:0;
+						
+						sprintf(buffer, "type=%s;size=%lu;modify=%s;UNIX.mode=0%i;UNIX.uid=root;UNIX.gid=root; %s\r\n", 
+							((entry.st_mode & S_IFDIR) != 0)?"dir":"file", 
+							(long unsigned int)entry.st_size, 
+							timebuf, 
+							permint,
+							ent.d_name);
+						
+						swritel(conn_s_data, buffer);
+					}
+				}
+				
+				swritel(conn_s, "226 Transfer complete\r\n");
+				
+				netShutdown(conn_s_data, 2);
+				netShutdown(list_s_data, 2);
+				netClose(conn_s_data);
+				netClose(list_s_data);
+				
+				conn_s_data = -1;
+				list_s_data = -1;
+				
+				lv2FsCloseDir(fdd);
+				break;
+				case 27: // MLST
+				swritel(conn_s, "250-Listing directory");
+				
+				char dirsd[256];
+				
+				if(parameter_count == 1)
+				{
+					absPath(dirsd, client_cmd[1], cwd);
+				}
+				else
+				{
+					strcpy(dirsd, cwd);
+				}
+				
+				int fdds;
+				if(lv2FsOpenDir(dirsd, &fdds) == 0)
+				{
+					u64 read;
+					Lv2FsDirent ent;
+					
+					char path[256];
+					
+					while(lv2FsReadDir(fdds, &ent, &read) == 0 && read != 0)
+					{
+						strcpy(path, cwd);
+						strcat(path, ent.d_name);
+							
+						struct stat entry; 
+						stat(path, &entry);
+						
+						struct tm *tm;
+						char timebuf[80];
+						tm = localtime(&entry.st_mtime);
+						strftime(timebuf, 80, "%Y%m%d%H%M%S", tm);
+						
+						int permint = 0;
+
+						permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0;
+						permint +=	((entry.st_mode & S_IWUSR) != 0)?200:0;
+						permint +=	((entry.st_mode & S_IXUSR) != 0)?100:0;
+						
+						permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0;
+						permint +=	((entry.st_mode & S_IWGRP) != 0)?20:0;
+						permint +=	((entry.st_mode & S_IXGRP) != 0)?10:0;
+						
+						permint +=	((entry.st_mode & S_IROTH) != 0)?4:0;
+						permint +=	((entry.st_mode & S_IWOTH) != 0)?2:0;
+						permint +=	((entry.st_mode & S_IXOTH) != 0)?1:0;
+						
+						sprintf(buffer, " type=%s;size=%lu;modify=%s;UNIX.mode=0%i;UNIX.uid=root;UNIX.gid=root;%s\r\n", 
+							((entry.st_mode & S_IFDIR) != 0)?"dir":"file", 
+							(long unsigned int)entry.st_size, 
+							timebuf, 
+							permint,
+							ent.d_name);
+						
+						swritel(conn_s, buffer);
+					}
+				}
+				
+				swritel(conn_s, "250 End\r\n");
+				
+				lv2FsCloseDir(fdds);
+				break;
 				default:
 				swritel(conn_s, "500 Unrecognized command\r\n");
 			}
 		}
+	
+	bytes = sreadl(conn_s, buffer, 1023);
 	}
 	
+	netShutdown(conn_s, 2);
+	netShutdown(conn_s_data, 2);
+	netShutdown(list_s_data, 2);
 	netClose(conn_s_data);
 	netClose(list_s_data);
 	netClose(conn_s);
@@ -1030,6 +1219,7 @@ int main(int argc, const char* argv[])
 		currentBuffer = !currentBuffer;
 	}
 	
+	netShutdown(list_s, 2);
 	netClose(list_s);
 	netDeinitialize();
 	
@@ -1037,6 +1227,8 @@ int main(int argc, const char* argv[])
 	free(buffers[1]);
 	
 	printf("Process completed\n");
+
+	exit(0);
 	return 0;
 }
 
