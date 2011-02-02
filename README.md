@@ -13,12 +13,6 @@ OpenPS3FTP was built using the PSL1GHT homebrew SDK.
 
 Credit to PSL1GHT, geohot, and stoneMcClane for tools and code.
 
-The websites that I have personally submitted/released OpenPS3FTP to are:
-
-* [PSX-SCENE](http://www.psx-scene.com) ([official thread](http://psx-scene.com/forums/f149/openps3ftp-v1-2-a-79035/))
-* [PS3 Hacks](http://www.ps3-hacks.com) ([article](http://www.ps3-hacks.com/2011/01/29/a-new-open-source-ps3-ftp-server-released/))
-
-Cheers to the owners of those websites.
 
 Instructions
 -----------------
