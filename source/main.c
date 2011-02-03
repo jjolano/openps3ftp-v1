@@ -462,20 +462,20 @@ static void handleclient(u64 conn_s_p)
 				
 					if(strcmp(client_cmd[1], "CHMOD") == 0)
 					{
+						char yy[256];
+						for(int xx = 4; xx <= parameter_count; xx++)
+						{
+							sprintf(yy, " %s", client_cmd[xx]);
+							strcat(client_cmd[3], yy);
+						}
+						
 						char filename[256];
 						absPath(filename, client_cmd[3], cwd);
 					
 						char perms[4];
 						sprintf(perms, "0%s", client_cmd[2]);
 					
-						int ret = exists(filename);
-					
-						if(ret == 0)
-						{
-							ret = lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8));
-						}
-					
-						if(ret == 0)
+						if(exists(filename) == 0 && lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
 						{
 							swritel(conn_s, "250 File permissions successfully set\r\n");
 						}
