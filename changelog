@@ -1,9 +1,11 @@
 [Version 1.3 - 2011]
 - New command parser
 - File transfers are more reliable
+- Exit to XMB is more reliable
 - Fixed some server return codes
 - IP address of the PS3 now displays on-screen
-- Added password change command (see readme)
+- Added password change command (PASSWD <newpassword>)
+- Added force exit command (EXITAPP)
 - Optimized some code
 - Simplified the transfer functions
 - CHMOD function now works
