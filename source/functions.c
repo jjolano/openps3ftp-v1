@@ -17,6 +17,7 @@
 
 #include <string.h>
 #include <fcntl.h>
+#include <stdio.h>
 
 void absPath(char* absPath, const char* path, const char* cwd)
 {
@@ -49,3 +50,4 @@ void stoupper(char *s)
 	do if (96 == (224 & *s)) *s &= 223;
 	while (*s++);
 }
+

@@ -152,8 +152,6 @@ void eventHandler(u64 status, u64 param, void * userdata)
 		netDeinitialize();
 		netFinalizeNetwork();
 	
-		sysUnregisterCallback(EVENT_SLOT0);
-	
 		printf("Process completed\n");
 		exit(0);
 	}
@@ -204,6 +202,7 @@ static void handleclient(u64 conn_s_p)
 		result = strtok(buffer, " ");
 		
 		strcpy(client_cmd[0], result);
+		stoupper(client_cmd[0]);
 		
 		while(parameter_count < 7 && (result = strtok(NULL, " ")) != NULL)
 		{
@@ -211,10 +210,7 @@ static void handleclient(u64 conn_s_p)
 			strcpy(client_cmd[parameter_count], result);
 		}
 		
-		// capitalize the command
-		stoupper(client_cmd[0]);
-		
-		// identify the command using client_cmds
+		// identify the command
 		for(c = 0; c < client_cmds_count; c++)
 		{
 			if(strcmp(client_cmd[0], client_cmds[c]) == 0)
@@ -1283,6 +1279,8 @@ static void handleconnections(u64 list_s_p)
 int main(int argc, const char* argv[])
 {
 	printf("OpenPS3FTP by @jjolano\nVersion %s\n\n", VERSION);
+
+	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
 	short int port = FTPPORT;
 	struct sockaddr_in servaddr;
@@ -1346,8 +1344,6 @@ int main(int argc, const char* argv[])
 	sprintf(version, "Version %s", VERSION);
 	sprintf(status, "FTP active (%s:%i).", ipaddr, port);
 	
-	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
-	
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_WHITE, res.width, res.height);
 	
@@ -1371,19 +1367,7 @@ int main(int argc, const char* argv[])
 		flip(currentBuffer);
 		currentBuffer = !currentBuffer;
 	}
-	
-	free(buffers[0]);
-	free(buffers[1]);
-	
-	netShutdown(list_s, 2);
-	netClose(list_s);
-	netDeinitialize();
-	netFinalizeNetwork();
-	
-	sysUnregisterCallback(EVENT_SLOT0);
-	
-	printf("Process completed\n");
-	exit(0);
+
 	return 0;
 }
 

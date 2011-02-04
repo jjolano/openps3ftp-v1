@@ -2,6 +2,7 @@
 - New command parser
 - File transfers are more reliable
 - Exit to XMB is more reliable
+- Removed "Press X to quit"
 - Fixed some server return codes
 - IP address of the PS3 now displays on-screen
 - Added password change command (PASSWD <newpassword>)
