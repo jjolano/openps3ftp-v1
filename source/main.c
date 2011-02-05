@@ -67,6 +67,8 @@ static char *feat_cmds[] =
 const int client_cmds_count	= sizeof(client_cmds)	/ sizeof(char *);
 const int feat_cmds_count	= sizeof(feat_cmds)	/ sizeof(char *);
 
+int exitapp = 0;
+
 /* sconsole */
 typedef struct {
 	int height;
@@ -149,11 +151,7 @@ void eventHandler(u64 status, u64 param, void * userdata)
 {
 	if(status == EVENT_REQUEST_EXITAPP) // 0x101
 	{
-		netDeinitialize();
-		netFinalizeNetwork();
-	
-		printf("Process completed\n");
-		exit(0);
+		exitapp = 1;
 	}
 }
 
@@ -173,6 +171,29 @@ static void handleclient(u64 conn_s_p)
 	char	buffer[1024];
 	ssize_t	bytes;
 	
+	// load password file
+	char passwordcheck[33];
+						
+	// check if password file exists - if not, use default password
+	if(exists("/dev_hdd0/game/OFTP00001/USRDIR/passwd") == 0)
+	{
+		Lv2FsFile fd;
+		u64 read;
+	
+		lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0);
+		lv2FsRead(fd, passwordcheck, 32, &read);
+		lv2FsClose(fd);
+	
+		if(strlen(passwordcheck) != 32)
+		{
+			strcpy(passwordcheck, LOGIN_PASSWORD);
+		}
+	}
+	else
+	{
+		strcpy(passwordcheck, LOGIN_PASSWORD);
+	}
+	
 	// start directory
 	strcpy(cwd, "/");
 	
@@ -181,7 +202,7 @@ static void handleclient(u64 conn_s_p)
 	sprintf(buffer, "220 Version %s\r\n", VERSION);
 	swritel(conn_s, buffer);
 	
-	while(active)
+	while(exitapp == 0 && active)
 	{
 		if((bytes = sreadl(conn_s, buffer, 1023)) <= 0)
 		{
@@ -271,28 +292,6 @@ static void handleclient(u64 conn_s_p)
 							sprintf(output + i * 2, "%02x", md5sum[i]);
 						}
 					
-						char passwordcheck[33];
-						
-						// check if password file exists - if not, use default password
-						if(exists("/dev_hdd0/game/OFTP00001/USRDIR/passwd") == 0)
-						{
-							Lv2FsFile fd;
-							u64 read;
-						
-							lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0);
-							lv2FsRead(fd, passwordcheck, 32, &read);
-							lv2FsClose(fd);
-						
-							if(strlen(passwordcheck) != 32)
-							{
-								strcpy(passwordcheck, LOGIN_PASSWORD);
-							}
-						}
-						else
-						{
-							strcpy(passwordcheck, LOGIN_PASSWORD);
-						}
-					
 						if(strcmp(user, LOGIN_USERNAME) == 0 && strcmp(output, passwordcheck) == 0)
 						{
 							swritel(conn_s, "230 Successful authentication\r\n");
@@ -347,17 +346,21 @@ static void handleclient(u64 conn_s_p)
 						netClose(conn_s_data);
 						netClose(list_s_data);
 					
-						conn_s_data = -1;
-						list_s_data = -1;
-					
 						// create the socket
 						list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
 
 						// assign a random port for passive mode
-						srand((unsigned)time(NULL) + rand());
+						srand(conn_s);
 					
 						int rand1 = (rand() % 251) + 4;
 						int rand2 = rand() % 256;
+
+						sprintf(buffer, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
+							(snf.local_adr.s_addr & 0xFF000000) >> 24,
+							(snf.local_adr.s_addr & 0xFF0000) >> 16,
+							(snf.local_adr.s_addr & 0xFF00) >> 8,
+							(snf.local_adr.s_addr & 0xFF),
+							rand1, rand2);
 					
 						short int pasvport = (rand1 * 256) + rand2;
 					
@@ -371,17 +374,9 @@ static void handleclient(u64 conn_s_p)
 						netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr));
 						netListen(list_s_data, 1);
 					
-						sprintf(buffer, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
-							(snf.local_adr.s_addr & 0xFF000000) >> 24,
-							(snf.local_adr.s_addr & 0xFF0000) >> 16,
-							(snf.local_adr.s_addr & 0xFF00) >> 8,
-							(snf.local_adr.s_addr & 0xFF),
-							rand1, rand2);
-					
 						swritel(conn_s, buffer);
 					
 						conn_s_data = netAccept(list_s_data, NULL, NULL);
-					
 						break;
 					}
 		
@@ -391,41 +386,31 @@ static void handleclient(u64 conn_s_p)
 					if(parameter_count == 1)
 					{
 						rest = 0;
+
+						netShutdown(conn_s_data, 2);
+						netShutdown(list_s_data, 2);
+						netClose(conn_s_data);
+						netClose(list_s_data);
 					
 						char connectinfo[24];
 						strcpy(connectinfo, client_cmd[1]);
 				
 						char data[7][4];
-						int len = strlen(connectinfo);
-						int i, x = 0, y = 0;
-				
-						for(i = 0;i < len;i++)
+						int i = 0;
+
+						char *result = NULL;
+						result = strtok(connectinfo, ",");
+	
+						strcpy(data[0], result);
+	
+						while(i < 6 && (result = strtok(NULL, ",")) != NULL)
 						{
-							if(connectinfo[i] == ',')
-							{
-								data[x][y] = '\0';
-								x++;
-								y = 0;
-							}
-							else
-							{
-								data[x][y] =  connectinfo[i];
-								y++;
-							}
+							i++;
+							strcpy(data[i], result);
 						}
 					
 						char conn_ipaddr[16];
 						sprintf(conn_ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
-		
-						int p1 = atoi(data[4]);
-						int p2 = atoi(data[5]);
-					
-						short int conn_port = (p1 * 256) + p2;
-					
-						netShutdown(conn_s_data, 2);
-						netShutdown(list_s_data, 2);
-						netClose(conn_s_data);
-						netClose(list_s_data);
 					
 						list_s_data = -1;
 						conn_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
@@ -433,7 +418,7 @@ static void handleclient(u64 conn_s_p)
 						struct sockaddr_in servaddr;
 						memset(&servaddr, 0, sizeof(servaddr));
 						servaddr.sin_family	= AF_INET;
-						servaddr.sin_port	= htons(conn_port);
+						servaddr.sin_port	= htons((atoi(data[4]) * 256) + atoi(data[5]));
 						inet_pton(AF_INET, conn_ipaddr, &servaddr.sin_addr);
 					
 						if(connect(conn_s_data, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
@@ -471,7 +456,7 @@ static void handleclient(u64 conn_s_p)
 						char perms[4];
 						sprintf(perms, "0%s", client_cmd[2]);
 					
-						if(exists(filename) == 0 && lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
+						if(lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
 						{
 							swritel(conn_s, "250 File permissions successfully set\r\n");
 						}
@@ -486,7 +471,7 @@ static void handleclient(u64 conn_s_p)
 					}
 					break;
 				case 6: // FEAT
-					swritel(conn_s, "211-Extensions supported:\r\n");
+					swritel(conn_s, "211- Extensions supported:\r\n");
 				
 					int i;
 					for(i = 0; i < feat_cmds_count; i++)
@@ -766,9 +751,13 @@ static void handleclient(u64 conn_s_p)
 
 							swritel(conn_s_data, buffer);
 						}
+						
+						swritel(conn_s, "226 Transfer complete\r\n");
 					}
-				
-					swritel(conn_s, "226 Transfer complete\r\n");
+					else
+					{
+						swritel(conn_s, "451 Cannot access directory\r\n");
+					}
 				
 					netShutdown(conn_s_data, 2);
 					netShutdown(list_s_data, 2);
@@ -1124,17 +1113,17 @@ static void handleclient(u64 conn_s_p)
 						
 							int permint = 0;
 
-							permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0;
-							permint +=	((entry.st_mode & S_IWUSR) != 0)?200:0;
-							permint +=	((entry.st_mode & S_IXUSR) != 0)?100:0;
+							permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0 +
+									((entry.st_mode & S_IWUSR) != 0)?200:0 +
+									((entry.st_mode & S_IXUSR) != 0)?100:0;
 						
-							permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0;
-							permint +=	((entry.st_mode & S_IWGRP) != 0)?20:0;
-							permint +=	((entry.st_mode & S_IXGRP) != 0)?10:0;
+							permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0 +
+									((entry.st_mode & S_IWGRP) != 0)?20:0 +
+									((entry.st_mode & S_IXGRP) != 0)?10:0;
 						
-							permint +=	((entry.st_mode & S_IROTH) != 0)?4:0;
-							permint +=	((entry.st_mode & S_IWOTH) != 0)?2:0;
-							permint +=	((entry.st_mode & S_IXOTH) != 0)?1:0;
+							permint +=	((entry.st_mode & S_IROTH) != 0)?4:0 +
+									((entry.st_mode & S_IWOTH) != 0)?2:0 +
+									((entry.st_mode & S_IXOTH) != 0)?1:0;
 						
 							sprintf(buffer, "type=%s;size=%lu;modify=%s;UNIX.mode=0%i;UNIX.uid=root;UNIX.gid=root; %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"dir":"file", 
@@ -1145,9 +1134,13 @@ static void handleclient(u64 conn_s_p)
 						
 							swritel(conn_s_data, buffer);
 						}
+						
+						swritel(conn_s, "226 Transfer complete\r\n");
 					}
-				
-					swritel(conn_s, "226 Transfer complete\r\n");
+					else
+					{
+						swritel(conn_s, "501 Directory access error\r\n");
+					}
 				
 					netShutdown(conn_s_data, 2);
 					netShutdown(list_s_data, 2);
@@ -1160,7 +1153,7 @@ static void handleclient(u64 conn_s_p)
 					lv2FsCloseDir(fdd);
 					break;
 				case 27: // MLST
-					swritel(conn_s, "250-Listing directory");
+					swritel(conn_s, "250- Listing directory");
 				
 					char dirsd[256];
 				
@@ -1203,19 +1196,19 @@ static void handleclient(u64 conn_s_p)
 						
 							int permint = 0;
 
-							permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0;
-							permint +=	((entry.st_mode & S_IWUSR) != 0)?200:0;
-							permint +=	((entry.st_mode & S_IXUSR) != 0)?100:0;
+							permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0 +
+									((entry.st_mode & S_IWUSR) != 0)?200:0 +
+									((entry.st_mode & S_IXUSR) != 0)?100:0;
 						
-							permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0;
-							permint +=	((entry.st_mode & S_IWGRP) != 0)?20:0;
-							permint +=	((entry.st_mode & S_IXGRP) != 0)?10:0;
+							permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0 +
+									((entry.st_mode & S_IWGRP) != 0)?20:0 +
+									((entry.st_mode & S_IXGRP) != 0)?10:0;
 						
-							permint +=	((entry.st_mode & S_IROTH) != 0)?4:0;
-							permint +=	((entry.st_mode & S_IWOTH) != 0)?2:0;
-							permint +=	((entry.st_mode & S_IXOTH) != 0)?1:0;
+							permint +=	((entry.st_mode & S_IROTH) != 0)?4:0 +
+									((entry.st_mode & S_IWOTH) != 0)?2:0 +
+									((entry.st_mode & S_IXOTH) != 0)?1:0;
 						
-							sprintf(buffer, " type=%s;size=%lu;modify=%s;UNIX.mode=0%i;UNIX.uid=root;UNIX.gid=root;%s\r\n", 
+							sprintf(buffer, " type=%s;size=%lu;modify=%s;UNIX.mode=0%i;UNIX.uid=root;UNIX.gid=root; %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"dir":"file", 
 								(long unsigned int)entry.st_size, 
 								timebuf, 
@@ -1266,11 +1259,15 @@ static void handleclient(u64 conn_s_p)
 static void handleconnections(u64 list_s_p)
 {
 	int list_s = (int)list_s_p;
+	int conn_s;
 	
-	while(1)
+	while(exitapp == 0)
 	{
-		sys_ppu_thread_t id;
-		sys_ppu_thread_create(&id, handleclient, (u64)netAccept(list_s, NULL, NULL), 1500, 0x8000, 0, "ClientCmdHandler");
+		if((conn_s = netAccept(list_s, NULL, NULL)) == 0)
+		{
+			sys_ppu_thread_t id;
+			sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x8000, 0, "ClientCmdHandler");
+		}
 	}
 	
 	sys_ppu_thread_exit(0);
@@ -1282,28 +1279,20 @@ int main(int argc, const char* argv[])
 
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
-	short int port = FTPPORT;
-	struct sockaddr_in servaddr;
-	
-	// set up socket address structure
-	memset(&servaddr, 0, sizeof(servaddr));
-	servaddr.sin_family      = AF_INET;
-	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	servaddr.sin_port        = htons(port);
-	
 	netInitialize();
+
+	struct sockaddr_in servaddr;
 
 	// a very bad way to grab the ip - temporary
 	char ipaddr[16];
 	int sip = netSocket(AF_INET, SOCK_STREAM, 0);
 	
-	struct sockaddr_in clntaddr;
-	memset(&clntaddr, 0, sizeof(clntaddr));
-	clntaddr.sin_family	= AF_INET;
-	clntaddr.sin_port	= htons(53);
-	inet_pton(AF_INET, "8.8.8.8", &clntaddr.sin_addr); // connect to google's dns server, lol
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin_family	= AF_INET;
+	servaddr.sin_port	= htons(53);
+	inet_pton(AF_INET, "8.8.8.8", &servaddr.sin_addr); // connect to google's dns server, lol
 	
-	if(connect(sip, (struct sockaddr *)&clntaddr, sizeof(clntaddr)) == 0)
+	if(connect(sip, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
 	{
 		netSocketInfo snf;
 		int ret = netGetSockInfo(sip, &snf, 1);
@@ -1329,6 +1318,13 @@ int main(int argc, const char* argv[])
 	netShutdown(sip, 2);
 	netClose(sip);
 	
+	// set up socket address structure
+	short int port = FTPPORT;
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin_family      = AF_INET;
+	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	servaddr.sin_port        = htons(port);
+	
 	// create listener socket
 	int list_s = netSocket(AF_INET, SOCK_STREAM, 0);
 	netBind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr));
@@ -1347,7 +1343,7 @@ int main(int argc, const char* argv[])
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_WHITE, res.width, res.height);
 	
-	while(1)
+	while(exitapp == 0)
 	{
 		sysCheckCallback();
 		waitFlip();
@@ -1367,7 +1363,13 @@ int main(int argc, const char* argv[])
 		flip(currentBuffer);
 		currentBuffer = !currentBuffer;
 	}
-
+	
+	netShutdown(list_s, 2);
+	netClose(list_s);
+	netDeinitialize();
+	//netFinalizeNetwork();
+	
+	printf("Process completed\n");
 	return 0;
 }
 
