@@ -670,9 +670,13 @@ static void handleclient(u64 conn_s_p)
 							sprintf(buffer, "%s\r\n", ent.d_name);
 							swritel(conn_s_data, buffer);
 						}
+						
+						swritel(conn_s, "226 Transfer complete\r\n");
 					}
-				
-					swritel(conn_s, "226 Transfer complete\r\n");
+					else
+					{
+						swritel(conn_s, "451 Cannot access directory\r\n");
+					}
 				
 					netShutdown(conn_s_data, 2);
 					netShutdown(list_s_data, 2);
