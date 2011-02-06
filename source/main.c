@@ -23,10 +23,8 @@ const char* VERSION = "1.3 (develop)";	// used in the welcome message and displa
 #include <unistd.h>
 #include <malloc.h>
 #include <string.h>
-#include <errno.h>
 #include <assert.h>
 #include <fcntl.h>
-#include <time.h>
 
 #include <psl1ght/lv2/filesystem.h>
 
@@ -163,7 +161,7 @@ static void handleclient(u64 conn_s_p)
 	
 	char	cwd[256];
 	char	rnfr[256];
-	char	user[33];
+	char	user[32];
 	u32	rest = 0;
 	int	authd = 0;
 	int	active = 1;
@@ -172,7 +170,7 @@ static void handleclient(u64 conn_s_p)
 	ssize_t	bytes;
 	
 	// load password file
-	char passwordcheck[33];
+	char passwordcheck[32];
 						
 	// check if password file exists - if not, use default password
 	if(exists("/dev_hdd0/game/OFTP00001/USRDIR/passwd") == 0)
@@ -204,7 +202,7 @@ static void handleclient(u64 conn_s_p)
 	
 	while(exitapp == 0 && active)
 	{
-		if((bytes = sreadl(conn_s, buffer, 1023)) <= 0)
+		if((bytes = sreadl(conn_s, buffer, 1024)) <= 0)
 		{
 			// client disconnected
 			break;
@@ -278,7 +276,7 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						// hash the password given
-						char output[33];
+						char output[32];
 						unsigned char md5sum[16];
 					
 						md5_context ctx;
@@ -392,7 +390,7 @@ static void handleclient(u64 conn_s_p)
 						netClose(conn_s_data);
 						netClose(list_s_data);
 					
-						char connectinfo[24];
+						char connectinfo[32];
 						strcpy(connectinfo, client_cmd[1]);
 				
 						char data[7][4];
@@ -730,11 +728,11 @@ static void handleclient(u64 conn_s_p)
 							stat(path, &entry);
 						
 							struct tm *tm;
-							char timebuf[80];
+							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 80, "%Y-%m-%d %H:%M", tm);
+							strftime(timebuf, 32, "%Y-%m-%d %H:%M", tm);
 						
-							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s   1 root  root        %lu %s %s\r\n", 
+							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %lu %s %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
 								((entry.st_mode & S_IRUSR) != 0)?"r":"-",
 								((entry.st_mode & S_IWUSR) != 0)?"w":"-",
@@ -801,7 +799,7 @@ static void handleclient(u64 conn_s_p)
 						
 						if(rest == 0)
 						{
-							oflags |= LV2_O_TRUNC;
+							oflags &= LV2_O_TRUNC;
 						}
 					
 						lv2FsOpen(path, oflags, &fd, 0, NULL, 0);
@@ -1035,7 +1033,7 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						// hash the password given
-						char output[33];
+						char output[32];
 						unsigned char md5sum[16];
 					
 						md5_context ctx;
@@ -1107,9 +1105,9 @@ static void handleclient(u64 conn_s_p)
 							stat(path, &entry);
 						
 							struct tm *tm;
-							char timebuf[80];
+							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 80, "%Y%m%d%H%M%S", tm);
+							strftime(timebuf, 32, "%Y%m%d%H%M%S", tm);
 						
 							int permint = 0;
 
@@ -1190,9 +1188,9 @@ static void handleclient(u64 conn_s_p)
 							stat(path, &entry);
 						
 							struct tm *tm;
-							char timebuf[80];
+							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 80, "%Y%m%d%H%M%S", tm);
+							strftime(timebuf, 32, "%Y%m%d%H%M%S", tm);
 						
 							int permint = 0;
 
@@ -1263,10 +1261,12 @@ static void handleconnections(u64 list_s_p)
 	
 	while(exitapp == 0)
 	{
-		if((conn_s = netAccept(list_s, NULL, NULL)) == 0)
+		if((conn_s = netAccept(list_s, NULL, NULL)) >= 0)
 		{
 			sys_ppu_thread_t id;
 			sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x8000, 0, "ClientCmdHandler");
+			
+			usleep(100000);
 		}
 	}
 	
@@ -1336,7 +1336,7 @@ int main(int argc, const char* argv[])
 	printf("FTP active (%s:%i).\n", ipaddr, port);
 	
 	int x, j;
-	char version[32], status[48];
+	char version[32], status[64];
 	sprintf(version, "Version %s", VERSION);
 	sprintf(status, "FTP active (%s:%i).", ipaddr, port);
 	
