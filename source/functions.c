@@ -13,15 +13,18 @@
 //    You should have received a copy of the GNU General Public License
 //    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "functions.h"
-
+#include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
-#include <stdio.h>
+
+#include <psl1ght/lv2/filesystem.h>
+
+#include "md5.h"
+#include "functions.h"
 
 void absPath(char* absPath, const char* path, const char* cwd)
 {
-	if(strlen(path) > 0 && path[0] == '/')
+	if(path[0] == '/')
 	{
 		strcpy(absPath, path);
 	}
@@ -32,16 +35,10 @@ void absPath(char* absPath, const char* path, const char* cwd)
 	}
 }
 
-int exists(char* path)
-{
-	struct stat entry; 
-	return stat(path, &entry);
-}
-
 int isDir(char* path)
 {
-	struct stat entry; 
-	stat(path, &entry);
+	Lv2FsStat entry; 
+	lv2FsStat(path, &entry);
 	return ((entry.st_mode & S_IFDIR) != 0);
 }
 
@@ -49,5 +46,21 @@ void stoupper(char *s)
 {
 	do if (96 == (224 & *s)) *s &= 223;
 	while (*s++);
+}
+
+void md5(const char* str, char md5[32])
+{
+	unsigned char md5sum[16];
+
+	md5_context ctx;
+	md5_starts(&ctx);
+	md5_update(&ctx, (unsigned char *)str, strlen(str));
+	md5_finish(&ctx, md5sum);
+
+	int i;
+	for(i = 0; i < 16; i++)
+	{
+		sprintf(md5 + i * 2, "%02x", md5sum[i]);
+	}
 }
 

@@ -37,14 +37,17 @@ const char* VERSION = "1.3 (develop)";	// used in the welcome message and displa
 #include <net/net.h>
 #include <sys/thread.h>
 
-#include "md5.h"
 #include "helper.h"
 #include "sconsole.h"
 #include "functions.h"
 
+#if LOGIN_CHECK == 1
 // default login details
 const char* LOGIN_USERNAME = "root";
 const char* LOGIN_PASSWORD = "ab5b3a8c09da585c175de3e137424ee0"; // md5("openbox")
+#endif
+
+const char* PASSWORD_FPATH = "/dev_hdd0/game/OFTP00001/USRDIR/passwd";
 
 static char *client_cmds[] =
 {
@@ -165,20 +168,21 @@ static void handleclient(u64 conn_s_p)
 	u32	rest = 0;
 	int	authd = 0;
 	int	active = 1;
-	
+
 	char	buffer[1024];
 	ssize_t	bytes;
 	
+	#if LOGIN_CHECK == 1
 	// load password file
 	char passwordcheck[32];
 						
 	// check if password file exists - if not, use default password
-	if(exists("/dev_hdd0/game/OFTP00001/USRDIR/passwd") == 0)
+	if(exists(PASSWORD_FPATH) == 0)
 	{
 		Lv2FsFile fd;
 		u64 read;
 	
-		lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0);
+		lv2FsOpen(PASSWORD_FPATH, LV2_O_RDONLY, &fd, 0, NULL, 0);
 		lv2FsRead(fd, passwordcheck, 32, &read);
 		lv2FsClose(fd);
 	
@@ -191,6 +195,7 @@ static void handleclient(u64 conn_s_p)
 	{
 		strcpy(passwordcheck, LOGIN_PASSWORD);
 	}
+	#endif
 	
 	// start directory
 	strcpy(cwd, "/");
@@ -200,14 +205,8 @@ static void handleclient(u64 conn_s_p)
 	sprintf(buffer, "220 Version %s\r\n", VERSION);
 	swritel(conn_s, buffer);
 	
-	while(exitapp == 0 && active)
+	while(exitapp == 0 && active && (bytes = sreadl(conn_s, buffer, 1024)) > 0)
 	{
-		if((bytes = sreadl(conn_s, buffer, 1024)) <= 0)
-		{
-			// client disconnected
-			break;
-		}
-		
 		// get rid of the newline at the end of the string
 		buffer[strcspn(buffer, "\n")] = '\0';
 		buffer[strcspn(buffer, "\r")] = '\0';
@@ -247,6 +246,7 @@ static void handleclient(u64 conn_s_p)
 			switch(cmd_id)
 			{
 				case 0: // USER
+					#if LOGIN_CHECK == 1
 					if(parameter_count >= 1)
 					{
 						char yy[256];
@@ -264,8 +264,13 @@ static void handleclient(u64 conn_s_p)
 					{
 						swritel(conn_s, "501 Please provide a username\r\n");
 					}
+					#else
+					sprintf(buffer, "331 User %s OK. Password (not really) required\r\n", user);
+					swritel(conn_s, buffer);
+					#endif
 					break;
 				case 1: // PASS
+					#if LOGIN_CHECK == 1
 					if(parameter_count >= 1)
 					{
 						char yy[256];
@@ -277,18 +282,7 @@ static void handleclient(u64 conn_s_p)
 						
 						// hash the password given
 						char output[32];
-						unsigned char md5sum[16];
-					
-						md5_context ctx;
-						md5_starts(&ctx);
-						md5_update(&ctx, (unsigned char *)client_cmd[1], strlen(client_cmd[1]));
-						md5_finish(&ctx, md5sum);
-					
-						int i;
-						for(i = 0; i < 16; i++)
-						{
-							sprintf(output + i * 2, "%02x", md5sum[i]);
-						}
+						md5(client_cmd[1], output);
 					
 						if(strcmp(user, LOGIN_USERNAME) == 0 && strcmp(output, passwordcheck) == 0)
 						{
@@ -304,6 +298,10 @@ static void handleclient(u64 conn_s_p)
 					{
 						swritel(conn_s, "501 Invalid username or password\r\n");
 					}
+					#else
+					swritel(conn_s, "230 Successful authentication\r\n");
+					authd = 1;
+					#endif
 					break;
 				case 2: // QUIT
 					swritel(conn_s, "221 See you later\r\n");
@@ -311,7 +309,7 @@ static void handleclient(u64 conn_s_p)
 					break;
 				case 28: // EXITAPP
 					swritel(conn_s, "221 Exiting OpenPS3FTP, bye\r\n");
-					exit(0);
+					exitapp = 1;
 					break;
 				default: swritel(conn_s, "530 You are not logged in\r\n");
 			}
@@ -1038,23 +1036,12 @@ static void handleclient(u64 conn_s_p)
 						
 						// hash the password given
 						char output[32];
-						unsigned char md5sum[16];
-					
-						md5_context ctx;
-						md5_starts(&ctx);
-						md5_update(&ctx, (unsigned char *)client_cmd[1], strlen(client_cmd[1]));
-						md5_finish(&ctx, md5sum);
-					
-						int i;
-						for(i = 0; i < 16; i++)
-						{
-							sprintf(output + i * 2, "%02x", md5sum[i]);
-						}
+						md5(client_cmd[1], output);
 					
 						Lv2FsFile fd;
 						u64 written;
 					
-						lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_WRONLY | LV2_O_CREAT | LV2_O_TRUNC, &fd, 0, NULL, 0);
+						lv2FsOpen(PASSWORD_FPATH, LV2_O_WRONLY | LV2_O_CREAT | LV2_O_TRUNC, &fd, 0, NULL, 0);
 						lv2FsWrite(fd, output, 32, &written);
 						lv2FsClose(fd);
 					
@@ -1311,12 +1298,12 @@ int main(int argc, const char* argv[])
 		}
 		else
 		{
-			sprintf(ipaddr, "0.0.0.0");
+			strcpy(ipaddr, "0.0.0.0");
 		}
 	}
 	else
 	{
-		sprintf(ipaddr, "0.0.0.0");
+		strcpy(ipaddr, "0.0.0.0");
 	}
 	
 	netShutdown(sip, 2);
