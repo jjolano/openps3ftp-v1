@@ -377,9 +377,10 @@ static void handleclient(u64 conn_s_p)
 					struct tm *tm;
 					char timebuf[80];
 					tm = localtime(&entry.st_mtime);
-					strftime(timebuf, 80, "%Y-%m-%d %H:%M", tm);
+//					strftime(timebuf, 80, "%Y-%m-%d %H:%M", tm);
+                  strftime(timebuf, 80, "%d %b %H:%M", tm);
 		
-					sprintf(message, "%srw-rw-rw-   1 root  root        %lu %s %s\r\n", 
+					sprintf(message, "%srwxrwxrwx   1 root  root        %lu %s %s\r\n", 
 						((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
 						(long unsigned int)entry.st_size, 
 						timebuf, 
