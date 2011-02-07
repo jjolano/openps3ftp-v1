@@ -174,7 +174,7 @@ static void handleclient(u64 conn_s_p)
 	
 	#if LOGIN_CHECK == 1
 	// load password file
-	char passwordcheck[32];
+	char passwordcheck[33];
 						
 	// check if password file exists - if not, use default password
 	if(exists(PASSWORD_FPATH) == 0)
@@ -281,8 +281,8 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						// hash the password given
-						char output[32];
-						md5(client_cmd[1], output);
+						char output[33];
+						md5(output, client_cmd[1]);
 					
 						if(strcmp(user, LOGIN_USERNAME) == 0 && strcmp(output, passwordcheck) == 0)
 						{
@@ -291,7 +291,7 @@ static void handleclient(u64 conn_s_p)
 						}
 						else
 						{
-							swritel(conn_s, "430 Invalid username or password\r\n");
+							swritel(conn_s, "430 Invalid username or password - \r\n");
 						}
 					}
 					else
@@ -732,7 +732,7 @@ static void handleclient(u64 conn_s_p)
 							struct tm *tm;
 							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 32, "%Y-%m-%d %H:%M", tm);
+							strftime(timebuf, 32, "%d %b %H:%M", tm);
 						
 							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %lu %s %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
@@ -1035,8 +1035,8 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						// hash the password given
-						char output[32];
-						md5(client_cmd[1], output);
+						char output[33];
+						md5(output, client_cmd[1]);
 					
 						Lv2FsFile fd;
 						u64 written;

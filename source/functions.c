@@ -35,11 +35,11 @@ void absPath(char* absPath, const char* path, const char* cwd)
 	}
 }
 
-int exists(const char* path)
+/*int exists(const char* path)
 {
 	Lv2FsStat entry;
 	return lv2FsStat(path, &entry);
-}
+}*/
 
 int isDir(const char* path)
 {
@@ -54,8 +54,9 @@ void stoupper(char *s)
 	while (*s++);
 }
 
-void md5(const char* str, char md5[32])
+void md5(char md5[33], const char* str)
 {
+	char output[33];
 	unsigned char md5sum[16];
 
 	md5_context ctx;
@@ -66,7 +67,9 @@ void md5(const char* str, char md5[32])
 	int i;
 	for(i = 0; i < 16; i++)
 	{
-		sprintf(md5 + i * 2, "%02x", md5sum[i]);
+		sprintf(output + i * 2, "%02x", md5sum[i]);
 	}
+	
+	strcpy(md5, output);
 }
 
