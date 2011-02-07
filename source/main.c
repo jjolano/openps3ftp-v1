@@ -180,7 +180,7 @@ static void handleclient(u64 conn_s_p)
 	
 	while(program_running)
 	{
-		if((len = sreadl(conn_s, buffer, 2047)) <= 0 || strncmp(buffer, "QUIT", 4) == 0 || strncmp(buffer, "BYE", 3) == 0)
+		if((len = sreadl(conn_s, buffer, 2047)) <= 0 || strncasecmp(buffer, "QUIT", 4) == 0 || strncasecmp(buffer, "BYE", 3) == 0)
 		{
 			break;
 		}
@@ -188,7 +188,7 @@ static void handleclient(u64 conn_s_p)
 		buffer[strcspn(buffer, "\n")] = '\0';
 		buffer[strcspn(buffer, "\r")] = '\0';
 		
-		if(strncmp(buffer, "USER", 4) == 0)
+		if(strncasecmp(buffer, "USER", 4) == 0)
 		{
 			if(len > 6)
 			{
@@ -201,7 +201,7 @@ static void handleclient(u64 conn_s_p)
 			
 			swritel(conn_s, "430 No username specified\r\n");
 		}
-		else if(strncmp(buffer, "PASS", 4) == 0)
+		else if(strncasecmp(buffer, "PASS", 4) == 0)
 		{
 			if(len > 6)
 			{
@@ -221,19 +221,19 @@ static void handleclient(u64 conn_s_p)
 		{
 			swritel(conn_s, "530 Not logged in\r\n");
 		}
-		else if(strncmp(buffer, "FEAT", 4) == 0)
+		else if(strncasecmp(buffer, "FEAT", 4) == 0)
 		{
 			swritel(conn_s, "211-Extensions supported:\r\n");
 			swritel(conn_s, " SIZE\r\n");
 			swritel(conn_s, " PASV\r\n");
 			swritel(conn_s, "211 End\r\n");
 		}
-		else if(strncmp(buffer, "TYPE", 4) == 0)
+		else if(strncasecmp(buffer, "TYPE", 4) == 0)
 		{
 			sprintf(message, "200 TYPE is now %s\r\n", buffer+5);
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "PORT", 4) == 0)
+		else if(strncasecmp(buffer, "PORT", 4) == 0)
 		{
 			rest = 0;
 			
@@ -290,7 +290,7 @@ static void handleclient(u64 conn_s_p)
 			
 			swritel(conn_s, "425 Internal Error\r\n");
 		}
-		else if(strncmp(buffer, "PASV", 4) == 0)
+		else if(strncasecmp(buffer, "PASV", 4) == 0)
 		{
 			rest = 0;
 			netSocketInfo snf;
@@ -342,11 +342,11 @@ static void handleclient(u64 conn_s_p)
 		
 		swritel(conn_s, "425 Internal Error\r\n");
 		}
-		else if(strncmp(buffer, "SYST", 4) == 0)
+		else if(strncasecmp(buffer, "SYST", 4) == 0)
 		{
 			swritel(conn_s, "215 UNIX Type: L8\r\n");
 		}
-		else if(strncmp(buffer, "LIST", 4) == 0)
+		else if(strncasecmp(buffer, "LIST", 4) == 0)
 		{
 			if(conn_s_data == -1)
 			{
@@ -404,12 +404,12 @@ static void handleclient(u64 conn_s_p)
 			
 			lv2FsCloseDir(root);
 		}
-		else if(strncmp(buffer, "PWD", 3) == 0)
+		else if(strncasecmp(buffer, "PWD", 3) == 0)
 		{
 			sprintf(message, "257 \"%s\" is the current directory\r\n", cwd);
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "RETR", 4) == 0)
+		else if(strncasecmp(buffer, "RETR", 4) == 0)
 		{
 			if(conn_s_data == -1)
 			{
@@ -465,7 +465,7 @@ static void handleclient(u64 conn_s_p)
 			
 			lv2FsClose(fd);
 		}
-		else if(strncmp(buffer, "CWD", 3) == 0)
+		else if(strncasecmp(buffer, "CWD", 3) == 0)
 		{
 			if(buffer[4] == '/')
 			{
@@ -499,7 +499,7 @@ static void handleclient(u64 conn_s_p)
 		
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "CDUP", 4) == 0)
+		else if(strncasecmp(buffer, "CDUP", 4) == 0)
 		{
 			sprintf(message, "250 Directory change successful: ");
 
@@ -520,12 +520,12 @@ static void handleclient(u64 conn_s_p)
 		
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "REST", 4) == 0)
+		else if(strncasecmp(buffer, "REST", 4) == 0)
 		{
 			rest = atoi(buffer+5);
 			swritel(conn_s, "200 REST command successful\r\n");
 		}
-		else if(strncmp(buffer, "DELE", 4) == 0)
+		else if(strncasecmp(buffer, "DELE", 4) == 0)
 		{
 			char filename[2048];
 			absPath(filename, buffer+5, cwd);
@@ -538,7 +538,7 @@ static void handleclient(u64 conn_s_p)
 			
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "STOR", 4) == 0)
+		else if(strncasecmp(buffer, "STOR", 4) == 0)
 		{
 			if(conn_s_data == -1)
 			{
@@ -600,7 +600,7 @@ static void handleclient(u64 conn_s_p)
 
 			lv2FsClose(fd);
 		}
-		else if(strncmp(buffer, "MKD", 3) == 0)
+		else if(strncasecmp(buffer, "MKD", 3) == 0)
 		{
 			char filename[2048];
 			absPath(filename, buffer+4, cwd);
@@ -613,7 +613,7 @@ static void handleclient(u64 conn_s_p)
 			
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "RMD", 3) == 0)
+		else if(strncasecmp(buffer, "RMD", 3) == 0)
 		{
 			char filename[2048];
 			absPath(filename, buffer+4, cwd);
@@ -629,9 +629,9 @@ static void handleclient(u64 conn_s_p)
 			
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "SITE", 4) == 0) // todo
+		else if(strncasecmp(buffer, "SITE", 4) == 0) // todo
 		{
-			if(strncmp(buffer+5, "CHMOD", 5) == 0)
+			if(strncasecmp(buffer+5, "CHMOD", 5) == 0)
 			{
 				char filename[2048];
 				absPath(filename, buffer+16, cwd);
@@ -652,7 +652,7 @@ static void handleclient(u64 conn_s_p)
 				swritel(conn_s, message);
 			}
 		}
-		else if(strncmp(buffer, "RNFR", 4) == 0)
+		else if(strncasecmp(buffer, "RNFR", 4) == 0)
 		{
 			absPath(rename_from, buffer+5, cwd);
 			
@@ -665,7 +665,7 @@ static void handleclient(u64 conn_s_p)
 		
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "RNTO", 4) == 0)
+		else if(strncasecmp(buffer, "RNTO", 4) == 0)
 		{
 			char filename[2048];
 			absPath(filename, buffer+5, cwd);
@@ -683,7 +683,7 @@ static void handleclient(u64 conn_s_p)
 			
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "SIZE", 4) == 0)
+		else if(strncasecmp(buffer, "SIZE", 4) == 0)
 		{
 			char filename[2048];
 			absPath(filename, buffer+5, cwd);
@@ -703,7 +703,7 @@ static void handleclient(u64 conn_s_p)
 		
 			swritel(conn_s, message);
 		}
-		else if(strncmp(buffer, "NOOP", 4) == 0)
+		else if(strncasecmp(buffer, "NOOP", 4) == 0)
 		{
 			swritel(conn_s, "200 Zzzz...\r\n");
 		}
