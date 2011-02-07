@@ -8,6 +8,6 @@ void absPath(char* absPath, const char* path, const char* cwd);
 int isDir(const char* path);
 
 void stoupper(char *s);
-void md5(char md5[32], const char* str);
+void md5(char md5[33], const char* str);
 
 #endif /* _openps3ftp_ */
