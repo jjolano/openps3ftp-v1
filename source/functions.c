@@ -35,7 +35,13 @@ void absPath(char* absPath, const char* path, const char* cwd)
 	}
 }
 
-int isDir(char* path)
+int exists(const char* path)
+{
+	Lv2FsStat entry;
+	return lv2FsStat(path, &entry);
+}
+
+int isDir(const char* path)
 {
 	Lv2FsStat entry; 
 	lv2FsStat(path, &entry);

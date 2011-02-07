@@ -1,10 +1,9 @@
 #ifndef _openps3ftp_
 #define _openps3ftp_
 
-#define exists(path) lv2FsStat(path, NULL)
-
 void absPath(char* absPath, const char* path, const char* cwd);
-int isDir(char* path);
+int exists(const char* path);
+int isDir(const char* path);
 
 void stoupper(char *s);
 void md5(const char* str, char md5[32]);
