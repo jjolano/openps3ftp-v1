@@ -1102,17 +1102,17 @@ static void handleclient(u64 conn_s_p)
 						
 							int permint = 0;
 
-							permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0 +
-									((entry.st_mode & S_IWUSR) != 0)?200:0 +
-									((entry.st_mode & S_IXUSR) != 0)?100:0;
+							permint +=	(((entry.st_mode & S_IRUSR) != 0)?400:0) +
+									(((entry.st_mode & S_IWUSR) != 0)?200:0) +
+									(((entry.st_mode & S_IXUSR) != 0)?100:0);
 						
-							permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0 +
-									((entry.st_mode & S_IWGRP) != 0)?20:0 +
-									((entry.st_mode & S_IXGRP) != 0)?10:0;
+							permint +=	(((entry.st_mode & S_IRGRP) != 0)?40:0) +
+									(((entry.st_mode & S_IWGRP) != 0)?20:0) +
+									(((entry.st_mode & S_IXGRP) != 0)?10:0);
 						
-							permint +=	((entry.st_mode & S_IROTH) != 0)?4:0 +
-									((entry.st_mode & S_IWOTH) != 0)?2:0 +
-									((entry.st_mode & S_IXOTH) != 0)?1:0;
+							permint +=	(((entry.st_mode & S_IROTH) != 0)?4:0) +
+									(((entry.st_mode & S_IWOTH) != 0)?2:0) +
+									(((entry.st_mode & S_IXOTH) != 0)?1:0);
 						
 							sprintf(buffer, "type=%s;size=%lu;modify=%s;UNIX.mode=0%i;UNIX.uid=root;UNIX.gid=root; %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"dir":"file", 
@@ -1185,17 +1185,17 @@ static void handleclient(u64 conn_s_p)
 						
 							int permint = 0;
 
-							permint +=	((entry.st_mode & S_IRUSR) != 0)?400:0 +
-									((entry.st_mode & S_IWUSR) != 0)?200:0 +
-									((entry.st_mode & S_IXUSR) != 0)?100:0;
+							permint +=	(((entry.st_mode & S_IRUSR) != 0)?400:0) +
+									(((entry.st_mode & S_IWUSR) != 0)?200:0) +
+									(((entry.st_mode & S_IXUSR) != 0)?100:0);
 						
-							permint +=	((entry.st_mode & S_IRGRP) != 0)?40:0 +
-									((entry.st_mode & S_IWGRP) != 0)?20:0 +
-									((entry.st_mode & S_IXGRP) != 0)?10:0;
+							permint +=	(((entry.st_mode & S_IRGRP) != 0)?40:0) +
+									(((entry.st_mode & S_IWGRP) != 0)?20:0) +
+									(((entry.st_mode & S_IXGRP) != 0)?10:0);
 						
-							permint +=	((entry.st_mode & S_IROTH) != 0)?4:0 +
-									((entry.st_mode & S_IWOTH) != 0)?2:0 +
-									((entry.st_mode & S_IXOTH) != 0)?1:0;
+							permint +=	(((entry.st_mode & S_IROTH) != 0)?4:0) +
+									(((entry.st_mode & S_IWOTH) != 0)?2:0) +
+									(((entry.st_mode & S_IXOTH) != 0)?1:0);
 						
 							sprintf(buffer, " type=%s;size=%lu;modify=%s;UNIX.mode=0%i;UNIX.uid=root;UNIX.gid=root; %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"dir":"file", 
