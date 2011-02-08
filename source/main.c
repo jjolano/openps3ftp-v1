@@ -798,11 +798,6 @@ static void handleclient(u64 conn_s_p)
 						
 						Lv2FsFile fd;
 						s32 oflags = LV2_O_WRONLY | LV2_O_CREAT;
-						
-						if(rest == 0)
-						{
-							oflags &= LV2_O_TRUNC;
-						}
 					
 						lv2FsOpen(path, oflags, &fd, 0, NULL, 0);
 						lv2FsChmod(path, S_IFMT | 0666);
