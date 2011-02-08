@@ -797,9 +797,8 @@ static void handleclient(u64 conn_s_p)
 						u64 write = -1;
 						
 						Lv2FsFile fd;
-						s32 oflags = LV2_O_WRONLY | LV2_O_CREAT;
 					
-						lv2FsOpen(path, oflags, &fd, 0, NULL, 0);
+						lv2FsOpen(path, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
 						lv2FsChmod(path, S_IFMT | 0666);
 					
 						lv2FsLSeek64(fd, (s32)rest, SEEK_SET, &pos);
