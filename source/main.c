@@ -17,7 +17,7 @@
 #define BUFFER_SIZE	16384	// the buffer size used in file transfers
 #define LOGIN_CHECK	1	// 1 to enable, 0 to disable the login checking
 
-const char* VERSION = "1.3 (develop)";	// used in the welcome message and displayed on-screen
+const char* VERSION = "1.3-rc";	// used in the welcome message and displayed on-screen
 
 #include <stdio.h>
 #include <unistd.h>
