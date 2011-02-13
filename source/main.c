@@ -28,6 +28,8 @@ const char* VERSION = "1.3 (develop)";	// used in the welcome message and displa
 
 #include <psl1ght/lv2/filesystem.h>
 
+#include <lv2/process.h>
+
 #include <sysutil/video.h>
 #include <sysutil/events.h>
 
@@ -732,7 +734,7 @@ static void handleclient(u64 conn_s_p)
 							struct tm *tm;
 							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 32, "%d %b %H:%M", tm);
+							strftime(timebuf, 32, "%b %d %Y", tm);
 						
 							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %lu %s %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
@@ -1208,7 +1210,7 @@ static void handleclient(u64 conn_s_p)
 					break;
 				case 28: // EXITAPP
 					swritel(conn_s, "221 Exiting OpenPS3FTP, bye\r\n");
-					exit(0);
+					sysProcessExit(0);
 					break;
 				case 29: // TEST
 					swritel(conn_s, "211-Listing parameters\r\n");

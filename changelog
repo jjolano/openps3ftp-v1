@@ -1,15 +1,16 @@
-[Version 1.3 - 2011]
+[Version 1.3 - February 2011]
 - New command parser
+- New readme format
 - File transfers are more reliable
-- Exit to XMB is more reliable
-- Removed "Press X to quit"
-- Fixed some server return codes
-- IP address of the PS3 now displays on-screen
+- Exit to XMB function is more reliable
+- Removed "Press X to quit" - use XMB Quit Game
+- Fixed and added some FTP return codes
+- Local IP address of the PS3 now displays on-screen
 - Added password change command (PASSWD <newpassword>)
 - Added force exit command (EXITAPP)
-- Optimized some code
-- Simplified the transfer functions
-- CHMOD function now works
+- Greatly optimized code
+- Simplified most functions
+- CHMOD function now works properly
 - File permissions now show correctly in directory listings
 - Now licensed under the GPL
 - Support for MLSD, MLST, and NLST commands
