@@ -9,5 +9,6 @@ int isDir(const char* path);
 
 void stoupper(char *s);
 void md5(char md5[33], const char* str);
+void paramjoin(char *s[128], int start, int end);
 
 #endif /* _openps3ftp_ */

@@ -14,10 +14,17 @@
 //    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
 
 #define FTPPORT		21	// port to start ftp server on
-#define BUFFER_SIZE	16384	// the buffer size used in file transfers
+#define BUFFER_SIZE	16384	// the default buffer size used in file transfers, in bytes
 #define LOGIN_CHECK	1	// 1 to enable, 0 to disable the login checking
 
-const char* VERSION = "1.3-rc";	// used in the welcome message and displayed on-screen
+// tested buffer values (smaller buffer size allows for more connections): 
+// <= 4096 - doesn't even connect
+// == 8192 - works, but transfer speed is a little lesser compared to 16k or 32k
+// == 16384 - works great - similar to 32768
+// == 32768 - works great - similar to 16384
+// >= 65536 - POS, slowest transfer EVER.
+
+const char* VERSION = "1.3";	// used in the welcome message and displayed on-screen
 
 #include <stdio.h>
 #include <unistd.h>
@@ -71,8 +78,8 @@ const int client_cmds_count	= sizeof(client_cmds)	/ sizeof(char *);
 const int feat_cmds_count	= sizeof(feat_cmds)	/ sizeof(char *);
 
 int exitapp = 0;
+int currentBuffer = 0;
 
-/* sconsole */
 typedef struct {
 	int height;
 	int width;
@@ -83,7 +90,6 @@ typedef struct {
 
 gcmContextData *context;
 VideoResolution res;
-int currentBuffer = 0;
 buffer *buffers[2];
 
 void waitFlip()
@@ -109,7 +115,7 @@ void makeBuffer(int id, int size)
 
 	assert(realityAddressToOffset(buf->ptr, &buf->offset) == 0);
 	assert(gcmSetDisplayBuffer(id, buf->offset, res.width * 4, res.width, res.height) == 0);
-	
+
 	buf->width = res.width;
 	buf->height = res.height;
 	buffers[id] = buf;
@@ -128,7 +134,7 @@ void init_screen()
 	assert(state.state == 0);
 
 	assert(videoGetResolution(state.displayMode.resolution, &res) == 0);
-	
+
 	VideoConfiguration vconfig;
 	memset(&vconfig, 0, sizeof(VideoConfiguration));
 	vconfig.resolution = state.displayMode.resolution;
@@ -139,7 +145,7 @@ void init_screen()
 	assert(videoGetState(0, 0, &state) == 0); 
 
 	s32 buffer_size = 4 * res.width * res.height;
-	
+
 	gcmSetFlipMode(GCM_FLIP_VSYNC);
 	makeBuffer(0, buffer_size);
 	makeBuffer(1, buffer_size);
@@ -147,8 +153,6 @@ void init_screen()
 	gcmResetFlipStatus();
 	flip(1);
 }
-
-/* hello! */
 
 void eventHandler(u64 status, u64 param, void * userdata)
 {
@@ -160,6 +164,8 @@ void eventHandler(u64 status, u64 param, void * userdata)
 
 static void handleclient(u64 conn_s_p)
 {
+	// todo: clean up
+	
 	int conn_s = (int)conn_s_p;
 	int list_s_data = -1;
 	int conn_s_data = -1;
@@ -251,12 +257,7 @@ static void handleclient(u64 conn_s_p)
 					#if LOGIN_CHECK == 1
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						strcpy(user, client_cmd[1]);
 						sprintf(buffer, "331 User %s OK. Password required\r\n", user);
@@ -275,12 +276,7 @@ static void handleclient(u64 conn_s_p)
 					#if LOGIN_CHECK == 1
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						// hash the password given
 						char output[33];
@@ -308,10 +304,6 @@ static void handleclient(u64 conn_s_p)
 				case 2: // QUIT
 					swritel(conn_s, "221 See you later\r\n");
 					active = 0;
-					break;
-				case 28: // EXITAPP
-					swritel(conn_s, "221 Exiting OpenPS3FTP, bye\r\n");
-					exitapp = 1;
 					break;
 				default: swritel(conn_s, "530 You are not logged in\r\n");
 			}
@@ -441,12 +433,7 @@ static void handleclient(u64 conn_s_p)
 				
 					if(strcmp(client_cmd[1], "CHMOD") == 0)
 					{
-						char yy[256];
-						for(int xx = 4; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[3], yy);
-						}
+						paramjoin((char **) client_cmd, 3, parameter_count);
 						
 						char filename[256];
 						absPath(filename, client_cmd[3], cwd);
@@ -505,12 +492,7 @@ static void handleclient(u64 conn_s_p)
 					
 						swritel(conn_s, "150 Opening data connection\r\n");
 
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 					
 						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
@@ -527,7 +509,7 @@ static void handleclient(u64 conn_s_p)
 					
 						if(fd >= 0)
 						{
-							while(lv2FsRead(fd, buf, BUFFER_SIZE, &read) == 0 && read > 0)
+							while(lv2FsRead(fd, buf, BUFFER_SIZE - 1, &read) == 0 && read > 0)
 							{
 								netSend(conn_s_data, buf, read, 0);
 							}
@@ -568,12 +550,7 @@ static void handleclient(u64 conn_s_p)
 				case 11: // CWD
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						char new_cwd[256];
 						strcpy(new_cwd, client_cmd[1]);
@@ -645,12 +622,7 @@ static void handleclient(u64 conn_s_p)
 				
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						absPath(dir, client_cmd[1], cwd);
 					}
@@ -701,12 +673,7 @@ static void handleclient(u64 conn_s_p)
 				
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						absPath(dirc, client_cmd[1], cwd);
 					}
@@ -728,8 +695,8 @@ static void handleclient(u64 conn_s_p)
 							strcpy(path, cwd);
 							strcat(path, ent.d_name);
 							
-							struct stat entry; 
-							stat(path, &entry);
+							Lv2FsStat entry;
+							lv2FsStat(path, &entry);
 						
 							struct tm *tm;
 							char timebuf[32];
@@ -782,12 +749,7 @@ static void handleclient(u64 conn_s_p)
 						
 						swritel(conn_s, "150 Opening data connection\r\n");
 
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						char path[256];
 						absPath(path, client_cmd[1], cwd);
@@ -807,7 +769,7 @@ static void handleclient(u64 conn_s_p)
 						
 						if(fd >= 0)
 						{
-							while((read = (u64)netRecv(conn_s_data, buf, BUFFER_SIZE, MSG_WAITALL)) > 0)
+							while((read = (u64)netRecv(conn_s_data, buf, BUFFER_SIZE - 1, MSG_WAITALL)) > 0)
 							{
 								lv2FsWrite(fd, buf, read, &write);
 							
@@ -852,12 +814,7 @@ static void handleclient(u64 conn_s_p)
 				case 17: // DELE
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
@@ -879,12 +836,7 @@ static void handleclient(u64 conn_s_p)
 				case 18: // MKD
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
@@ -906,12 +858,7 @@ static void handleclient(u64 conn_s_p)
 				case 19: // RMD
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
@@ -933,12 +880,7 @@ static void handleclient(u64 conn_s_p)
 				case 20: // RNFR
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						absPath(rnfr, client_cmd[1], cwd);
 					
@@ -959,12 +901,7 @@ static void handleclient(u64 conn_s_p)
 				case 21: // RNTO
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
@@ -986,19 +923,14 @@ static void handleclient(u64 conn_s_p)
 				case 22: // SIZE
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
 					
-						struct stat entry;
-					
-						if(stat(filename, &entry) == 0)
+						Lv2FsStat entry;
+						
+						if(lv2FsStat(filename, &entry) == 0)
 						{
 							sprintf(buffer, "213 %lu\r\n", (long unsigned int)entry.st_size);
 						}
@@ -1023,12 +955,7 @@ static void handleclient(u64 conn_s_p)
 				case 25: // PASSWD
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						// hash the password given
 						char output[33];
@@ -1037,7 +964,7 @@ static void handleclient(u64 conn_s_p)
 						Lv2FsFile fd;
 						u64 written;
 					
-						lv2FsOpen(PASSWORD_FPATH, LV2_O_WRONLY | LV2_O_CREAT | LV2_O_TRUNC, &fd, 0, NULL, 0);
+						lv2FsOpen(PASSWORD_FPATH, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
 						lv2FsWrite(fd, output, 32, &written);
 						lv2FsClose(fd);
 					
@@ -1061,12 +988,7 @@ static void handleclient(u64 conn_s_p)
 				
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						absPath(dirs, client_cmd[1], cwd);
 					}
@@ -1088,8 +1010,8 @@ static void handleclient(u64 conn_s_p)
 							strcpy(path, cwd);
 							strcat(path, ent.d_name);
 						
-							struct stat entry; 
-							stat(path, &entry);
+							Lv2FsStat entry;
+							lv2FsStat(path, &entry);
 						
 							struct tm *tm;
 							char timebuf[32];
@@ -1144,12 +1066,7 @@ static void handleclient(u64 conn_s_p)
 				
 					if(parameter_count >= 1)
 					{
-						char yy[256];
-						for(int xx = 2; xx <= parameter_count; xx++)
-						{
-							sprintf(yy, " %s", client_cmd[xx]);
-							strcat(client_cmd[1], yy);
-						}
+						paramjoin((char **) client_cmd, 1, parameter_count);
 						
 						absPath(dirsd, client_cmd[1], cwd);
 					}
@@ -1171,8 +1088,8 @@ static void handleclient(u64 conn_s_p)
 							strcpy(path, cwd);
 							strcat(path, ent.d_name);
 							
-							struct stat entry; 
-							stat(path, &entry);
+							Lv2FsStat entry;
+							lv2FsStat(path, &entry);
 						
 							struct tm *tm;
 							char timebuf[32];
@@ -1251,9 +1168,9 @@ static void handleconnections(u64 list_s_p)
 		if((conn_s = netAccept(list_s, NULL, NULL)) >= 0)
 		{
 			sys_ppu_thread_t id;
-			sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x8000, 0, "ClientCmdHandler");
+			sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, BUFFER_SIZE * 2, 0, "ClientCmdHandler");
 			
-			usleep(100000);
+			usleep(100000); // this should solve some connection issues
 		}
 	}
 	
@@ -1267,11 +1184,14 @@ int main(int argc, const char* argv[])
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
 	netInitialize();
-
+	
 	struct sockaddr_in servaddr;
-
-	// a very bad way to grab the ip - temporary
+	
+	// grab ip
 	char ipaddr[16];
+	// a very bad way to get ip :(
+	// todo: find another method
+	
 	int sip = netSocket(AF_INET, SOCK_STREAM, 0);
 	
 	memset(&servaddr, 0, sizeof(servaddr));
@@ -1328,12 +1248,11 @@ int main(int argc, const char* argv[])
 	sprintf(status, "FTP active (%s:%i).", ipaddr, port);
 	
 	init_screen();
-	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_WHITE, res.width, res.height);
+	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_GREEN, res.width, res.height);
 	
 	while(exitapp == 0)
 	{
 		sysCheckCallback();
-		waitFlip();
 		
 		for(x = 0; x < res.height; x++)
 		{
@@ -1348,13 +1267,13 @@ int main(int argc, const char* argv[])
 		print(50, 200, status, buffers[currentBuffer]->ptr);
 		
 		flip(currentBuffer);
+		waitFlip();
 		currentBuffer = !currentBuffer;
 	}
 	
 	netShutdown(list_s, 2);
 	netClose(list_s);
 	netDeinitialize();
-	//netFinalizeNetwork();
 	
 	printf("Process completed\n");
 	return 0;

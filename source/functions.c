@@ -17,6 +17,8 @@
 #include <string.h>
 #include <fcntl.h>
 
+#include <net/net.h>
+
 #include <psl1ght/lv2/filesystem.h>
 
 #include "md5.h"
@@ -43,7 +45,7 @@ void absPath(char* absPath, const char* path, const char* cwd)
 
 int isDir(const char* path)
 {
-	Lv2FsStat entry; 
+	Lv2FsStat entry;
 	lv2FsStat(path, &entry);
 	return ((entry.st_mode & S_IFDIR) != 0);
 }
@@ -71,5 +73,15 @@ void md5(char md5[33], const char* str)
 	}
 	
 	strcpy(md5, output);
+}
+
+void paramjoin(char *s[128], int start, int end)
+{
+	char yy[128];
+	for(int xx = start + 1; xx <= end; xx++)
+	{
+		sprintf(yy, " %s", s[xx]);
+		strcat(s[start], yy);
+	}
 }
 
