@@ -230,7 +230,6 @@ static void handleclient(u64 conn_s_p)
 		strcpy(client_cmd[0], result);
 		
 		while(parameter_count < 7 && (result = strtok(NULL, " ")) != NULL)
->>>>>>> develop
 		{
 			parameter_count++;
 			strcpy(client_cmd[parameter_count], result);
@@ -239,7 +238,6 @@ static void handleclient(u64 conn_s_p)
 		// identify the command
 		int cmd_id;
 		for(cmd_id = 0; cmd_id < client_cmds_count; cmd_id++)
->>>>>>> develop
 		{
 			if(strcasecmp(client_cmd[0], client_cmds[cmd_id]) == 0)
 			{
@@ -249,7 +247,6 @@ static void handleclient(u64 conn_s_p)
 		
 		// execute command
 		if(authd == 0)
->>>>>>> develop
 		{
 			// not logged in
 			
@@ -321,7 +318,6 @@ static void handleclient(u64 conn_s_p)
 			}
 		}
 		else
->>>>>>> develop
 		{
 			// logged in
 			
@@ -667,7 +663,6 @@ static void handleclient(u64 conn_s_p)
 						swritel(conn_s, "451 Cannot access directory\r\n");
 					}
 				
-
 					lv2FsCloseDir(tempfd);
 					break;
 				case 14: // LIST
@@ -676,7 +671,6 @@ static void handleclient(u64 conn_s_p)
 						swritel(conn_s, "425 No data connection\r\n");
 						break;
 					}
->>>>>>> develop
 				
 					swritel(conn_s, "150 Opening data connection\r\n");
 				
@@ -696,7 +690,6 @@ static void handleclient(u64 conn_s_p)
 						strcpy(filename, cwd);
 					}
 				
-
 					if(lv2FsOpenDir(filename, &tempfd) == 0)
 					{
 						u64 read;
@@ -766,7 +759,6 @@ static void handleclient(u64 conn_s_p)
 						u64 write = -1;
 						
 						Lv2FsFile fd;
->>>>>>> develop
 					
 						lv2FsOpen(filename, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
 						lv2FsChmod(filename, S_IFMT | 0666);
@@ -805,7 +797,6 @@ static void handleclient(u64 conn_s_p)
 					{
 						swritel(conn_s, "501 Syntax error\r\n");
 					}
-
 					break;
 				case 16: // NOOP
 					swritel(conn_s, "200 Zzzz...\r\n");
@@ -992,7 +983,6 @@ static void handleclient(u64 conn_s_p)
 					
 						Lv2FsFile fd;
 						u64 written;
->>>>>>> develop
 					
 						lv2FsOpen(PASSWORD_FPATH, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
 						lv2FsWrite(fd, output, 32, &written);
@@ -1049,7 +1039,6 @@ static void handleclient(u64 conn_s_p)
 						
 							int permint = 0;
 
-
 							permint +=	(((entry.st_mode & S_IRUSR) != 0)?400:0) +
 									(((entry.st_mode & S_IWUSR) != 0)?200:0) +
 									(((entry.st_mode & S_IXUSR) != 0)?100:0);
@@ -1083,7 +1072,6 @@ static void handleclient(u64 conn_s_p)
 					break;
 				case 27: // MLST
 					swritel(conn_s, "250- Listing directory");
->>>>>>> develop
 				
 					if(parameter_count >= 1)
 					{
@@ -1167,10 +1155,8 @@ static void handleclient(u64 conn_s_p)
 					break;
 				default: swritel(conn_s, "500 Unrecognized command\r\n");
 			}
-
 			
 			if(datareq == 1)
->>>>>>> develop
 			{
 				datareq = 0;
 			}
@@ -1191,8 +1177,6 @@ static void handleclient(u64 conn_s_p)
 					list_s_data = -1;
 				}
 			}
-
->>>>>>> develop
 		}
 	}
 	
