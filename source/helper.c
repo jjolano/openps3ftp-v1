@@ -1,3 +1,18 @@
+//    This file is part of OpenPS3FTP.
+
+//    OpenPS3FTP is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+
+//    OpenPS3FTP is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+
+//    You should have received a copy of the GNU General Public License
+//    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
+
 /*
 
   HELPER.C
@@ -16,7 +31,7 @@
 */
 
 #include "helper.h"
-#include <sys/socket.h>
+
 #include <string.h>
 #include <net/net.h>
 #include <unistd.h>
@@ -81,14 +96,12 @@ ssize_t swritel(int socket, const char *str)
 	
 	size_t      nleft;
 	ssize_t     write;
-	const char *buffer;
 	
-	buffer = str;
 	nleft  = n;
 
 	while(nleft > 0)
 	{
-		if((write = netSend(socket, buffer, nleft, 0)) <= 0)
+		if((write = netSend(socket, str, nleft, 0)) <= 0)
 		{
 			if(errno == EINTR)
 			{
@@ -98,8 +111,8 @@ ssize_t swritel(int socket, const char *str)
 			return -1;
 		}
 		
-		nleft  -= write;
-		buffer += write;
+		nleft	-= write;
+		str	+= write;
 	}
 	
 	return n;

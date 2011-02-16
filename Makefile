@@ -10,7 +10,7 @@ BUILD		:=	build
 SOURCE		:=	source
 INCLUDE		:=	include
 DATA		:=	data
-LIBS		:=	-lnet -lsysmodule -lio -lgcm_sys -lreality -lsysutil
+LIBS		:=	-lnet -lsysmodule -lgcm_sys -lreality -lsysutil
 
 TITLE		:=	OpenPS3FTP
 APPID		:=	OFTP00001
@@ -19,8 +19,8 @@ PKGFILES	:=	release
 SFOXML		:=	sfo.xml
 ICON0		:=	ICON0.PNG
 
-CFLAGS		+= -O2 -Wall -std=gnu99
-CXXFLAGS	+= -O2 -Wall
+CFLAGS		+= -O3 -Wall -std=gnu99
+CXXFLAGS	+= -O3 -Wall
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
