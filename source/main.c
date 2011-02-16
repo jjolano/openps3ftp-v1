@@ -35,8 +35,6 @@ const char* VERSION = "1.3";	// used in the welcome message and displayed on-scr
 
 #include <psl1ght/lv2/filesystem.h>
 
-#include <lv2/process.h>
-
 #include <sysutil/video.h>
 #include <sysutil/events.h>
 
@@ -169,15 +167,20 @@ static void handleclient(u64 conn_s_p)
 	int conn_s = (int)conn_s_p;
 	int list_s_data = -1;
 	int conn_s_data = -1;
+	int datareq = 0;
 	
-	char	cwd[256];
-	char	rnfr[256];
-	char	user[32];
-	u32	rest = 0;
-	int	authd = 0;
-	int	active = 1;
+	char		cwd[256];
+	char		rnfr[256];
+	char		filename[256];
+	char		user[32];
+	u32		rest = 0;
+	int		authd = 0;
+	int		active = 1;
+	Lv2FsFile	tempfd;
+	char		buf[BUFFER_SIZE];
 
 	char	buffer[1024];
+	char	client_cmd[8][128];
 	ssize_t	bytes;
 	
 	#if LOGIN_CHECK == 1
@@ -189,11 +192,11 @@ static void handleclient(u64 conn_s_p)
 	{
 		Lv2FsFile fd;
 		u64 read;
-	
+		
 		lv2FsOpen(PASSWORD_FPATH, LV2_O_RDONLY, &fd, 0, NULL, 0);
 		lv2FsRead(fd, passwordcheck, 32, &read);
 		lv2FsClose(fd);
-	
+		
 		if(strlen(passwordcheck) != 32)
 		{
 			strcpy(passwordcheck, LOGIN_PASSWORD);
@@ -220,15 +223,11 @@ static void handleclient(u64 conn_s_p)
 		buffer[strcspn(buffer, "\r")] = '\0';
 		
 		// parse received string into array
-		int parameter_count = 0, c;
-		int cmd_id = -1;
-		char client_cmd[8][128];
+		int parameter_count = 0;
 		
-		char *result = NULL;
-		result = strtok(buffer, " ");
+		char *result = strtok(buffer, " ");
 		
 		strcpy(client_cmd[0], result);
-		stoupper(client_cmd[0]);
 		
 		while(parameter_count < 7 && (result = strtok(NULL, " ")) != NULL)
 		{
@@ -237,11 +236,11 @@ static void handleclient(u64 conn_s_p)
 		}
 		
 		// identify the command
-		for(c = 0; c < client_cmds_count; c++)
+		int cmd_id;
+		for(cmd_id = 0; cmd_id < client_cmds_count; cmd_id++)
 		{
-			if(strcmp(client_cmd[0], client_cmds[c]) == 0)
+			if(strcasecmp(client_cmd[0], client_cmds[cmd_id]) == 0)
 			{
-				cmd_id = c;
 				break;
 			}
 		}
@@ -257,7 +256,12 @@ static void handleclient(u64 conn_s_p)
 					#if LOGIN_CHECK == 1
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
 						strcpy(user, client_cmd[1]);
 						sprintf(buffer, "331 User %s OK. Password required\r\n", user);
@@ -276,7 +280,12 @@ static void handleclient(u64 conn_s_p)
 					#if LOGIN_CHECK == 1
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
 						// hash the password given
 						char output[33];
@@ -331,65 +340,58 @@ static void handleclient(u64 conn_s_p)
 				
 					if(ret >= 0 && snf.local_adr.s_addr != 0)
 					{
-						netShutdown(conn_s_data, 2);
-						netShutdown(list_s_data, 2);
-						netClose(conn_s_data);
-						netClose(list_s_data);
-					
-						// create the socket
-						list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
-
 						// assign a random port for passive mode
 						srand(conn_s);
-					
+						
 						int rand1 = (rand() % 251) + 4;
 						int rand2 = rand() % 256;
-
+						
 						sprintf(buffer, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
 							(snf.local_adr.s_addr & 0xFF000000) >> 24,
 							(snf.local_adr.s_addr & 0xFF0000) >> 16,
 							(snf.local_adr.s_addr & 0xFF00) >> 8,
 							(snf.local_adr.s_addr & 0xFF),
 							rand1, rand2);
-					
+						
 						short int pasvport = (rand1 * 256) + rand2;
-					
+						
 						struct sockaddr_in servaddr;
 						memset(&servaddr, 0, sizeof(servaddr));
 						servaddr.sin_family      = AF_INET;
 						servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 						servaddr.sin_port        = htons(pasvport);
-					
-						// bind address to listener and listen
+						
+						list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
 						netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr));
 						netListen(list_s_data, 1);
-					
+						
 						swritel(conn_s, buffer);
-					
-						conn_s_data = netAccept(list_s_data, NULL, NULL);
+						
+						if((conn_s_data = netAccept(list_s_data, NULL, NULL)) == -1)
+						{
+							swritel(conn_s, "550 PASV command failed\r\n");
+						}
+						else
+						{
+							datareq = 1;
+						}
 						break;
 					}
 		
-					swritel(conn_s, "425 Internal Error\r\n");
+					swritel(conn_s, "550 PASV command failed\r\n");
 					break;
 				case 4: // PORT
 					if(parameter_count == 1)
 					{
 						rest = 0;
-
-						netShutdown(conn_s_data, 2);
-						netShutdown(list_s_data, 2);
-						netClose(conn_s_data);
-						netClose(list_s_data);
-					
+						
 						char connectinfo[32];
 						strcpy(connectinfo, client_cmd[1]);
-				
+						
 						char data[7][4];
 						int i = 0;
-
-						char *result = NULL;
-						result = strtok(connectinfo, ",");
+						
+						char *result = strtok(connectinfo, ",");
 	
 						strcpy(data[0], result);
 	
@@ -401,27 +403,24 @@ static void handleclient(u64 conn_s_p)
 					
 						char conn_ipaddr[16];
 						sprintf(conn_ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
-					
-						list_s_data = -1;
-						conn_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
-					
+						
 						struct sockaddr_in servaddr;
 						memset(&servaddr, 0, sizeof(servaddr));
 						servaddr.sin_family	= AF_INET;
 						servaddr.sin_port	= htons((atoi(data[4]) * 256) + atoi(data[5]));
 						inet_pton(AF_INET, conn_ipaddr, &servaddr.sin_addr);
+						
+						conn_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
 					
 						if(connect(conn_s_data, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
 						{
 							swritel(conn_s, "200 PORT command successful\r\n");
-							break;
+							datareq = 1;
 						}
-					
-						netShutdown(conn_s_data, 2);
-						netClose(conn_s_data);
-						conn_s_data = -1;
-					
-						swritel(conn_s, "425 Internal Error\r\n");
+						else
+						{
+							swritel(conn_s, "550 PORT command failed\r\n");
+						}
 					}
 					else
 					{
@@ -429,18 +428,20 @@ static void handleclient(u64 conn_s_p)
 					}
 					break;
 				case 5: // SITE
-					stoupper(client_cmd[1]);
-				
-					if(strcmp(client_cmd[1], "CHMOD") == 0)
+					if(strcasecmp(client_cmd[1], "CHMOD") == 0)
 					{
-						paramjoin((char **) client_cmd, 3, parameter_count);
+						int i;
+						for(i = 4; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[3], " ");
+							strcat(client_cmd[3], client_cmd[i]);
+						}
 						
-						char filename[256];
 						absPath(filename, client_cmd[3], cwd);
 					
 						char perms[4];
 						sprintf(perms, "0%s", client_cmd[2]);
-					
+						
 						if(lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
 						{
 							swritel(conn_s, "250 File permissions successfully set\r\n");
@@ -492,13 +493,15 @@ static void handleclient(u64 conn_s_p)
 					
 						swritel(conn_s, "150 Opening data connection\r\n");
 
-						paramjoin((char **) client_cmd, 1, parameter_count);
-					
-						char filename[256];
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
+						
 						absPath(filename, client_cmd[1], cwd);
-		
-						char buf[BUFFER_SIZE];
-					
+						
 						u64 pos;
 						u64 read = -1;
 					
@@ -527,15 +530,7 @@ static void handleclient(u64 conn_s_p)
 						{
 							swritel(conn_s, "452 File access error\r\n");
 						}
-					
-						netShutdown(conn_s_data, 2);
-						netShutdown(list_s_data, 2);
-						netClose(conn_s_data);
-						netClose(list_s_data);
-					
-						conn_s_data = -1;
-						list_s_data = -1;
-				
+						
 						lv2FsClose(fd);
 					}
 					else
@@ -550,28 +545,44 @@ static void handleclient(u64 conn_s_p)
 				case 11: // CWD
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
-						
-						char new_cwd[256];
-						strcpy(new_cwd, client_cmd[1]);
-					
-						if(new_cwd[0] == '/')
+						int i;
+						for(i = 2; i <= parameter_count; i++)
 						{
-							if(strlen(new_cwd) == 1)
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
+						
+						strcpy(filename, client_cmd[1]);
+						
+						if(strcmp(filename, "../") == 0)
+						{
+							for(int i = strlen(cwd) - 2; i > 0; i--)
 							{
-								strcpy(cwd, "/");
+								if(cwd[i] != '/')
+								{
+									cwd[i] = '\0';
+								}
+								else
+								{
+									break;
+								}
 							}
-							else
-							{
-								strcpy(cwd, new_cwd);
-							}
+							
+							sprintf(buffer, "250 Directory change successful: %s\r\n", cwd);
+							swritel(conn_s, buffer);
+							break;
+						}
+					
+						if(filename[0] == '/')
+						{
+							strcpy(cwd, (strlen(filename) == 1) ? "/" : filename);
 						}
 						else
 						{
-							strcat(cwd, new_cwd);
+							strcat(cwd, filename);
 						}
 					
-						if(cwd[strlen(cwd)-1] != '/')
+						if(cwd[strlen(cwd) - 1] != '/')
 						{
 							strcat(cwd, "/");
 						}
@@ -618,26 +629,28 @@ static void handleclient(u64 conn_s_p)
 				
 					swritel(conn_s, "150 Opening data connection\r\n");
 				
-					char dir[256];
-				
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						absPath(dir, client_cmd[1], cwd);
+						absPath(filename, client_cmd[1], cwd);
 					}
 					else
 					{
-						strcpy(dir, cwd);
+						strcpy(filename, cwd);
 					}
 				
-					int diro;
-					if(lv2FsOpenDir(dir, &diro) == 0)
+					if(lv2FsOpenDir(filename, &tempfd) == 0)
 					{
 						u64 read;
 						Lv2FsDirent ent;
 					
-						while(lv2FsReadDir(diro, &ent, &read) == 0 && read != 0)
+						while(lv2FsReadDir(tempfd, &ent, &read) == 0 && read != 0)
 						{
 							sprintf(buffer, "%s\r\n", ent.d_name);
 							swritel(conn_s_data, buffer);
@@ -650,15 +663,7 @@ static void handleclient(u64 conn_s_p)
 						swritel(conn_s, "451 Cannot access directory\r\n");
 					}
 				
-					netShutdown(conn_s_data, 2);
-					netShutdown(list_s_data, 2);
-					netClose(conn_s_data);
-					netClose(list_s_data);
-				
-					conn_s_data = -1;
-					list_s_data = -1;
-				
-					lv2FsCloseDir(diro);
+					lv2FsCloseDir(tempfd);
 					break;
 				case 14: // LIST
 					if(conn_s_data == -1)
@@ -669,39 +674,38 @@ static void handleclient(u64 conn_s_p)
 				
 					swritel(conn_s, "150 Opening data connection\r\n");
 				
-					char dirc[256];
-				
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						absPath(dirc, client_cmd[1], cwd);
+						absPath(filename, client_cmd[1], cwd);
 					}
 					else
 					{
-						strcpy(dirc, cwd);
+						strcpy(filename, cwd);
 					}
 				
-					int root;
-					if(lv2FsOpenDir(dirc, &root) == 0)
+					if(lv2FsOpenDir(filename, &tempfd) == 0)
 					{
 						u64 read;
 						Lv2FsDirent ent;
-					
-						char path[256];
-					
-						while(lv2FsReadDir(root, &ent, &read) == 0 && read != 0)
+						
+						while(lv2FsReadDir(tempfd, &ent, &read) == 0 && read != 0)
 						{
-							strcpy(path, cwd);
-							strcat(path, ent.d_name);
+							sprintf(filename, "%s%s", cwd, ent.d_name);
 							
 							Lv2FsStat entry;
-							lv2FsStat(path, &entry);
+							lv2FsStat(filename, &entry);
 						
 							struct tm *tm;
 							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 32, "%b %d %Y", tm);
+							strftime(timebuf, 31, "%b %d %Y", tm);
 						
 							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %lu %s %s\r\n", 
 								((entry.st_mode & S_IFDIR) != 0)?"d":"-", 
@@ -728,15 +732,7 @@ static void handleclient(u64 conn_s_p)
 						swritel(conn_s, "451 Cannot access directory\r\n");
 					}
 				
-					netShutdown(conn_s_data, 2);
-					netShutdown(list_s_data, 2);
-					netClose(conn_s_data);
-					netClose(list_s_data);
-				
-					conn_s_data = -1;
-					list_s_data = -1;
-				
-					lv2FsCloseDir(root);
+					lv2FsCloseDir(tempfd);
 					break;
 				case 15: // STOR
 					if(parameter_count >= 1)
@@ -749,12 +745,14 @@ static void handleclient(u64 conn_s_p)
 						
 						swritel(conn_s, "150 Opening data connection\r\n");
 
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						char path[256];
-						absPath(path, client_cmd[1], cwd);
-						
-						char buf[BUFFER_SIZE];
+						absPath(filename, client_cmd[1], cwd);
 						
 						u64 pos;
 						u64 read = -1;
@@ -762,8 +760,8 @@ static void handleclient(u64 conn_s_p)
 						
 						Lv2FsFile fd;
 					
-						lv2FsOpen(path, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
-						lv2FsChmod(path, S_IFMT | 0666);
+						lv2FsOpen(filename, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
+						lv2FsChmod(filename, S_IFMT | 0666);
 					
 						lv2FsLSeek64(fd, (s32)rest, SEEK_SET, &pos);
 						
@@ -793,14 +791,6 @@ static void handleclient(u64 conn_s_p)
 							swritel(conn_s, "452 File access error\r\n");
 						}
 						
-						netShutdown(conn_s_data, 2);
-						netShutdown(list_s_data, 2);
-						netClose(conn_s_data);
-						netClose(list_s_data);
-						
-						conn_s_data = -1;
-						list_s_data = -1;
-						
 						lv2FsClose(fd);
 					}
 					else
@@ -814,9 +804,13 @@ static void handleclient(u64 conn_s_p)
 				case 17: // DELE
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
 						
 						if(lv2FsUnlink(filename) == 0)
@@ -836,9 +830,13 @@ static void handleclient(u64 conn_s_p)
 				case 18: // MKD
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
 					
 						if(lv2FsMkdir(filename, 0775) == 0)
@@ -858,9 +856,13 @@ static void handleclient(u64 conn_s_p)
 				case 19: // RMD
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
 					
 						if(lv2FsRmdir(filename) == 0)
@@ -880,7 +882,12 @@ static void handleclient(u64 conn_s_p)
 				case 20: // RNFR
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
 						absPath(rnfr, client_cmd[1], cwd);
 					
@@ -901,9 +908,13 @@ static void handleclient(u64 conn_s_p)
 				case 21: // RNTO
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
 					
 						if(lv2FsRename(rnfr, filename) == 0)
@@ -923,9 +934,13 @@ static void handleclient(u64 conn_s_p)
 				case 22: // SIZE
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						char filename[256];
 						absPath(filename, client_cmd[1], cwd);
 					
 						Lv2FsStat entry;
@@ -955,7 +970,12 @@ static void handleclient(u64 conn_s_p)
 				case 25: // PASSWD
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
 						// hash the password given
 						char output[33];
@@ -984,39 +1004,38 @@ static void handleclient(u64 conn_s_p)
 				
 					swritel(conn_s, "150 Opening data connection\r\n");
 				
-					char dirs[256];
-				
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						absPath(dirs, client_cmd[1], cwd);
+						absPath(filename, client_cmd[1], cwd);
 					}
 					else
 					{
-						strcpy(dirs, cwd);
+						strcpy(filename, cwd);
 					}
 				
-					int fdd;
-					if(lv2FsOpenDir(dirs, &fdd) == 0)
+					if(lv2FsOpenDir(filename, &tempfd) == 0)
 					{
 						u64 read;
 						Lv2FsDirent ent;
 					
-						char path[256];
-					
-						while(lv2FsReadDir(fdd, &ent, &read) == 0 && read != 0)
+						while(lv2FsReadDir(tempfd, &ent, &read) == 0 && read != 0)
 						{
-							strcpy(path, cwd);
-							strcat(path, ent.d_name);
-						
+							sprintf(filename, "%s%s", cwd, ent.d_name);
+							
 							Lv2FsStat entry;
-							lv2FsStat(path, &entry);
+							lv2FsStat(filename, &entry);
 						
 							struct tm *tm;
 							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 32, "%Y%m%d%H%M%S", tm);
+							strftime(timebuf, 31, "%Y%m%d%H%M%S", tm);
 						
 							int permint = 0;
 
@@ -1048,53 +1067,44 @@ static void handleclient(u64 conn_s_p)
 					{
 						swritel(conn_s, "501 Directory access error\r\n");
 					}
-				
-					netShutdown(conn_s_data, 2);
-					netShutdown(list_s_data, 2);
-					netClose(conn_s_data);
-					netClose(list_s_data);
-				
-					conn_s_data = -1;
-					list_s_data = -1;
-				
-					lv2FsCloseDir(fdd);
+
+					lv2FsCloseDir(tempfd);
 					break;
 				case 27: // MLST
 					swritel(conn_s, "250- Listing directory");
 				
-					char dirsd[256];
-				
 					if(parameter_count >= 1)
 					{
-						paramjoin((char **) client_cmd, 1, parameter_count);
+						int i;
+						for(i = 2; i <= parameter_count; i++)
+						{
+							strcat(client_cmd[1], " ");
+							strcat(client_cmd[1], client_cmd[i]);
+						}
 						
-						absPath(dirsd, client_cmd[1], cwd);
+						absPath(filename, client_cmd[1], cwd);
 					}
 					else
 					{
-						strcpy(dirsd, cwd);
+						strcpy(filename, cwd);
 					}
-				
-					int fdds;
-					if(lv2FsOpenDir(dirsd, &fdds) == 0)
+					
+					if(lv2FsOpenDir(filename, &tempfd) == 0)
 					{
 						u64 read;
 						Lv2FsDirent ent;
 					
-						char path[256];
-					
-						while(lv2FsReadDir(fdds, &ent, &read) == 0 && read != 0)
+						while(lv2FsReadDir(tempfd, &ent, &read) == 0 && read != 0)
 						{
-							strcpy(path, cwd);
-							strcat(path, ent.d_name);
+							sprintf(filename, "%s%s", cwd, ent.d_name);
 							
 							Lv2FsStat entry;
-							lv2FsStat(path, &entry);
+							lv2FsStat(filename, &entry);
 						
 							struct tm *tm;
 							char timebuf[32];
 							tm = localtime(&entry.st_mtime);
-							strftime(timebuf, 32, "%Y%m%d%H%M%S", tm);
+							strftime(timebuf, 31, "%Y%m%d%H%M%S", tm);
 						
 							int permint = 0;
 
@@ -1123,11 +1133,11 @@ static void handleclient(u64 conn_s_p)
 				
 					swritel(conn_s, "250 End\r\n");
 				
-					lv2FsCloseDir(fdds);
+					lv2FsCloseDir(tempfd);
 					break;
 				case 28: // EXITAPP
 					swritel(conn_s, "221 Exiting OpenPS3FTP, bye\r\n");
-					sysProcessExit(0);
+					exitapp = 1;
 					break;
 				case 29: // TEST
 					swritel(conn_s, "211-Listing parameters\r\n");
@@ -1145,14 +1155,32 @@ static void handleclient(u64 conn_s_p)
 					break;
 				default: swritel(conn_s, "500 Unrecognized command\r\n");
 			}
+			
+			if(datareq == 1)
+			{
+				datareq = 0;
+			}
+			else
+			{
+				// close any active data connections
+				if(conn_s_data > -1)
+				{
+					netShutdown(conn_s_data, 2);
+					netClose(conn_s_data);
+					conn_s_data = -1;
+				}
+				
+				if(list_s_data > -1)
+				{
+					netShutdown(list_s_data, 2);
+					netClose(list_s_data);
+					list_s_data = -1;
+				}
+			}
 		}
 	}
 	
 	netShutdown(conn_s, 2);
-	netShutdown(conn_s_data, 2);
-	netShutdown(list_s_data, 2);
-	netClose(conn_s_data);
-	netClose(list_s_data);
 	netClose(conn_s);
 	
 	sys_ppu_thread_exit(0);
@@ -1243,12 +1271,20 @@ int main(int argc, const char* argv[])
 	printf("FTP active (%s:%i).\n", ipaddr, port);
 	
 	int x, j;
-	char version[32], status[64];
+	char version[32], status[128];
 	sprintf(version, "Version %s", VERSION);
 	sprintf(status, "FTP active (%s:%i).", ipaddr, port);
 	
+	// check if dev_blind is mounted - if so, print warning
+	if(exists("/dev_blind") == 0)
+	{
+		strcat(status, " WARNING: dev_blind mount detected - please be careful when accessing /dev_blind!");
+	}
+	
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_GREEN, res.width, res.height);
+	
+	waitFlip();
 	
 	while(exitapp == 0)
 	{
@@ -1273,6 +1309,7 @@ int main(int argc, const char* argv[])
 	
 	netShutdown(list_s, 2);
 	netClose(list_s);
+	
 	netDeinitialize();
 	
 	printf("Process completed\n");

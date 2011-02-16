@@ -37,11 +37,11 @@ void absPath(char* absPath, const char* path, const char* cwd)
 	}
 }
 
-/*int exists(const char* path)
+int exists(const char* path)
 {
 	Lv2FsStat entry;
 	return lv2FsStat(path, &entry);
-}*/
+}
 
 int isDir(const char* path)
 {
@@ -50,11 +50,11 @@ int isDir(const char* path)
 	return ((entry.st_mode & S_IFDIR) != 0);
 }
 
-void stoupper(char *s)
+/*void stoupper(char *s)
 {
 	do if (96 == (224 & *s)) *s &= 223;
 	while (*s++);
-}
+}*/
 
 void md5(char md5[33], const char* str)
 {
@@ -73,15 +73,5 @@ void md5(char md5[33], const char* str)
 	}
 	
 	strcpy(md5, output);
-}
-
-void paramjoin(char *s[128], int start, int end)
-{
-	char yy[128];
-	for(int xx = start + 1; xx <= end; xx++)
-	{
-		sprintf(yy, " %s", s[xx]);
-		strcat(s[start], yy);
-	}
 }
 
