@@ -72,8 +72,14 @@ static char *feat_cmds[] =
 	"EXITAPP", "TEST"
 };
 
+static char *flash_mountpoints[] =
+{
+	"/dev_blind", "/dev_fflash", "/dev_rwflash", "/dev_Alejandro"
+};
+
 const int client_cmds_count	= sizeof(client_cmds)	/ sizeof(char *);
 const int feat_cmds_count	= sizeof(feat_cmds)	/ sizeof(char *);
+const int flash_mountpoints_count = sizeof(flash_mountpoints) / sizeof(char *);
 
 int exitapp = 0;
 int currentBuffer = 0;
@@ -1273,12 +1279,16 @@ int main(int argc, const char* argv[])
 	int x, j;
 	char version[32], status[128];
 	sprintf(version, "Version %s", VERSION);
-	sprintf(status, "FTP active (%s:%i).", ipaddr, port);
-	
-	// check if dev_blind is mounted - if so, print warning
-	if(exists("/dev_blind") == 0)
-	{
-		strcat(status, " WARNING: dev_blind mount detected - please be careful when accessing /dev_blind!");
+	j = sprintf(status, "FTP active (%s:%i).", ipaddr, port);
+
+	for (x = 0; x < flash_mountpoints_count; x++)
+	{	
+		// check if dev_flash is mounted rw - if so, print warning
+		if(exists(flash_mountpoints[x]) == 0)
+		{
+			sprintf(&status[j], " WARNING: %s mount detected - please be careful when accessing %s!", flash_mountpoints[x], flash_mountpoints[x]);
+			break;
+		}
 	}
 	
 	init_screen();
