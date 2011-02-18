@@ -13,9 +13,9 @@
 //    You should have received a copy of the GNU General Public License
 //    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
 
-#define FTPPORT		21	// port to start ftp server on
+#define FTPPORT		21	// port to start ftp server on (21 is standard)
 #define BUFFER_SIZE	16384	// the default buffer size used in file transfers, in bytes
-#define LOGIN_CHECK	1	// 1 to enable, 0 to disable the login checking
+//#define NOLOGIN		// uncomment to disable login checking
 
 // tested buffer values (smaller buffer size allows for more connections): 
 // <= 4096 - doesn't even connect
@@ -24,7 +24,7 @@
 // == 32768 - works great - similar to 16384
 // >= 65536 - POS, slowest transfer EVER.
 
-const char* VERSION = "1.3";	// used in the welcome message and displayed on-screen
+const char* VERSION = "1.4";	// used in the welcome message and displayed on-screen
 
 #include <stdio.h>
 #include <unistd.h>
@@ -48,13 +48,13 @@ const char* VERSION = "1.3";	// used in the welcome message and displayed on-scr
 #include "sconsole.h"
 #include "functions.h"
 
-#if LOGIN_CHECK == 1
+#ifndef NOLOGIN
 // default login details
 const char* LOGIN_USERNAME = "root";
 const char* LOGIN_PASSWORD = "ab5b3a8c09da585c175de3e137424ee0"; // md5("openbox")
-#endif
 
 const char* PASSWORD_FPATH = "/dev_hdd0/game/OFTP00001/USRDIR/passwd";
+#endif
 
 static char *client_cmds[] =
 {
@@ -183,7 +183,7 @@ static void handleclient(u64 conn_s_p)
 	char	client_cmd[8][128];
 	ssize_t	bytes;
 	
-	#if LOGIN_CHECK == 1
+	#ifndef NOLOGIN
 	// load password file
 	char passwordcheck[33];
 						
@@ -253,7 +253,7 @@ static void handleclient(u64 conn_s_p)
 			switch(cmd_id)
 			{
 				case 0: // USER
-					#if LOGIN_CHECK == 1
+					#ifndef NOLOGIN
 					if(parameter_count >= 1)
 					{
 						int i;
@@ -277,7 +277,7 @@ static void handleclient(u64 conn_s_p)
 					#endif
 					break;
 				case 1: // PASS
-					#if LOGIN_CHECK == 1
+					#ifndef NOLOGIN
 					if(parameter_count >= 1)
 					{
 						int i;
@@ -335,7 +335,6 @@ static void handleclient(u64 conn_s_p)
 					rest = 0;
 				
 					netSocketInfo snf;
-				
 					int ret = netGetSockInfo(conn_s, &snf, 1);
 				
 					if(ret >= 0 && snf.local_adr.s_addr != 0)
@@ -353,13 +352,11 @@ static void handleclient(u64 conn_s_p)
 							(snf.local_adr.s_addr & 0xFF),
 							rand1, rand2);
 						
-						short int pasvport = (rand1 * 256) + rand2;
-						
 						struct sockaddr_in servaddr;
 						memset(&servaddr, 0, sizeof(servaddr));
 						servaddr.sin_family      = AF_INET;
 						servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-						servaddr.sin_port        = htons(pasvport);
+						servaddr.sin_port        = htons((rand1 * 256) + rand2);
 						
 						list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
 						netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr));
@@ -375,6 +372,7 @@ static void handleclient(u64 conn_s_p)
 						{
 							datareq = 1;
 						}
+						
 						break;
 					}
 		
@@ -440,7 +438,7 @@ static void handleclient(u64 conn_s_p)
 						absPath(filename, client_cmd[3], cwd);
 					
 						char perms[4];
-						sprintf(perms, "0%s", client_cmd[2]);
+						sprintf(perms, "0%i", atoi(client_cmd[2]));
 						
 						if(lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
 						{
@@ -475,6 +473,7 @@ static void handleclient(u64 conn_s_p)
 					if(parameter_count == 1)
 					{
 						rest = atoi(client_cmd[1]);
+						datareq = 1;
 						swritel(conn_s, "350 REST command successful\r\n");
 					}
 					else
@@ -554,9 +553,9 @@ static void handleclient(u64 conn_s_p)
 						
 						strcpy(filename, client_cmd[1]);
 						
-						if(strcmp(filename, "../") == 0)
+						if(strcmp(filename, "../") == 0) // do CDUP
 						{
-							for(int i = strlen(cwd) - 2; i > 0; i--)
+							for(i = strlen(cwd) - 2; i > 0; i--)
 							{
 								if(cwd[i] != '/')
 								{
@@ -572,28 +571,18 @@ static void handleclient(u64 conn_s_p)
 							swritel(conn_s, buffer);
 							break;
 						}
+						
+						char temp_cwd[256];
+						absPath(temp_cwd, filename, cwd);
 					
-						if(filename[0] == '/')
+						if(isDir(temp_cwd))
 						{
-							strcpy(cwd, (strlen(filename) == 1) ? "/" : filename);
+							strcpy(cwd, temp_cwd);
+							sprintf(buffer, "250 Directory change successful: %s\r\n", temp_cwd);
 						}
 						else
 						{
-							strcat(cwd, filename);
-						}
-					
-						if(cwd[strlen(cwd) - 1] != '/')
-						{
-							strcat(cwd, "/");
-						}
-					
-						if(isDir(cwd))
-						{
-							sprintf(buffer, "250 Directory change successful: %s\r\n", cwd);
-						}
-						else
-						{
-							sprintf(buffer, "550 Could not change directory: %s\r\n", cwd);
+							sprintf(buffer, "550 Could not change directory: %s\r\n", temp_cwd);
 						}
 					
 						swritel(conn_s, buffer);
@@ -695,7 +684,7 @@ static void handleclient(u64 conn_s_p)
 						u64 read;
 						Lv2FsDirent ent;
 						
-						while(lv2FsReadDir(tempfd, &ent, &read) == 0 && read != 0)
+						while(lv2FsReadDir(tempfd, &ent, &read) == 0 && read > 0)
 						{
 							sprintf(filename, "%s%s", cwd, ent.d_name);
 							
@@ -1224,8 +1213,8 @@ int main(int argc, const char* argv[])
 	
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family	= AF_INET;
-	servaddr.sin_port	= htons(53);
-	inet_pton(AF_INET, "8.8.8.8", &servaddr.sin_addr); // connect to google's dns server, lol
+	servaddr.sin_port	= htons(80);
+	inet_pton(AF_INET, "74.125.226.115", &servaddr.sin_addr); // connect to google, lol
 	
 	if(connect(sip, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
 	{

@@ -58,7 +58,6 @@ int isDir(const char* path)
 
 void md5(char md5[33], const char* str)
 {
-	char output[33];
 	unsigned char md5sum[16];
 
 	md5_context ctx;
@@ -69,9 +68,7 @@ void md5(char md5[33], const char* str)
 	int i;
 	for(i = 0; i < 16; i++)
 	{
-		sprintf(output + i * 2, "%02x", md5sum[i]);
+		sprintf(md5 + i * 2, "%02x", md5sum[i]);
 	}
-	
-	strcpy(md5, output);
 }
 
