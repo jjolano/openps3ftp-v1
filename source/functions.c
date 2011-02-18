@@ -72,3 +72,44 @@ void md5(char md5[33], const char* str)
 	}
 }
 
+void closeconn(int socket)
+{
+	if(socket != -1)
+	{
+		netShutdown(socket, 2);
+		netClose(socket);
+		socket = -1;
+	}
+}
+
+void simplesplit(const char* str, char* left, char* right)
+{
+	int i, p = 0, x = 0;
+	int len = strlen(str);
+	
+	for(i = 0; i < len; i++)
+	{
+		if(str[i] == ' ')
+		{
+			if(x == 1)
+			{
+				right[p++] = str[i];
+				
+				if(i == len)
+				{
+					right[p] = '\0';
+				}
+			}
+			else
+			{
+				left[p] = '\0';
+				x = 1;
+				p = 0;
+			}
+		}
+		else
+		{
+			left[p++] = str[i];
+		}
+	}
+}

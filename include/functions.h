@@ -7,5 +7,7 @@ int isDir(const char* path);
 
 //void stoupper(char *s);
 void md5(char md5[33], const char* str);
+void closeconn(int socket);
+void simplesplit(const char* str, char* left, char* right);
 
 #endif /* _openps3ftp_functions_ */

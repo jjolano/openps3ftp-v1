@@ -15,7 +15,8 @@
 
 #define FTPPORT		21	// port to start ftp server on (21 is standard)
 #define BUFFER_SIZE	16384	// the default buffer size used in file transfers, in bytes
-//#define NOLOGIN		// uncomment to disable login checking
+
+// compile with -DNOLOGIN to disable login checking
 
 // tested buffer values (smaller buffer size allows for more connections): 
 // <= 4096 - doesn't even connect
@@ -26,10 +27,6 @@
 
 const char* VERSION = "1.4";	// used in the welcome message and displayed on-screen
 
-#include <stdio.h>
-#include <unistd.h>
-#include <malloc.h>
-#include <string.h>
 #include <assert.h>
 #include <fcntl.h>
 
@@ -44,17 +41,16 @@ const char* VERSION = "1.4";	// used in the welcome message and displayed on-scr
 #include <net/net.h>
 #include <sys/thread.h>
 
+#include "common.h"
 #include "helper.h"
 #include "sconsole.h"
-#include "functions.h"
+#include "ftpcmd.h"
 
-#ifndef NOLOGIN
 // default login details
 const char* LOGIN_USERNAME = "root";
 const char* LOGIN_PASSWORD = "ab5b3a8c09da585c175de3e137424ee0"; // md5("openbox")
 
-const char* PASSWORD_FPATH = "/dev_hdd0/game/OFTP00001/USRDIR/passwd";
-#endif
+char passwd_md5[33];
 
 static char *client_cmds[] =
 {
@@ -189,31 +185,6 @@ static void handleclient(u64 conn_s_p)
 	char	client_cmd[8][128];
 	ssize_t	bytes;
 	
-	#ifndef NOLOGIN
-	// load password file
-	char passwordcheck[33];
-						
-	// check if password file exists - if not, use default password
-	if(exists(PASSWORD_FPATH) == 0)
-	{
-		Lv2FsFile fd;
-		u64 read;
-		
-		lv2FsOpen(PASSWORD_FPATH, LV2_O_RDONLY, &fd, 0, NULL, 0);
-		lv2FsRead(fd, passwordcheck, 32, &read);
-		lv2FsClose(fd);
-		
-		if(strlen(passwordcheck) != 32)
-		{
-			strcpy(passwordcheck, LOGIN_PASSWORD);
-		}
-	}
-	else
-	{
-		strcpy(passwordcheck, LOGIN_PASSWORD);
-	}
-	#endif
-	
 	// start directory
 	strcpy(cwd, "/");
 	
@@ -297,7 +268,7 @@ static void handleclient(u64 conn_s_p)
 						char output[33];
 						md5(output, client_cmd[1]);
 					
-						if(strcmp(user, LOGIN_USERNAME) == 0 && strcmp(output, passwordcheck) == 0)
+						if(strcmp(user, LOGIN_USERNAME) == 0 && strcmp(output, passwd_md5) == 0)
 						{
 							swritel(conn_s, "230 Successful authentication\r\n");
 							authd = 1;
@@ -973,16 +944,15 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						// hash the password given
-						char output[33];
-						md5(output, client_cmd[1]);
-					
+						md5(passwd_md5, client_cmd[1]);
+						
 						Lv2FsFile fd;
 						u64 written;
-					
-						lv2FsOpen(PASSWORD_FPATH, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
-						lv2FsWrite(fd, output, 32, &written);
+						
+						lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0);
+						lv2FsWrite(fd, passwd_md5, 32, &written);
 						lv2FsClose(fd);
-					
+						
 						swritel(conn_s, "200 Password successfully changed\r\n");
 					}
 					else
@@ -1278,6 +1248,22 @@ int main(int argc, const char* argv[])
 			sprintf(&status[j], " WARNING: %s mount detected - please be careful when accessing %s!", flash_mountpoints[x], flash_mountpoints[x]);
 			break;
 		}
+	}
+	
+	// load password file
+	if(exists("/dev_hdd0/game/OFTP00001/USRDIR/passwd") == 0)
+	{
+		Lv2FsFile fd;
+		u64 read;
+		
+		lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0);
+		lv2FsRead(fd, passwd_md5, 32, &read);
+		lv2FsClose(fd);
+	}
+	
+	if(strlen(passwd_md5) != 32)
+	{
+		strcpy(passwd_md5, LOGIN_PASSWORD);
 	}
 	
 	init_screen();
