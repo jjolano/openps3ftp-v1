@@ -335,7 +335,7 @@ static void handleclient(u64 conn_s_p)
 						servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 						servaddr.sin_port        = htons((rand1 * 256) + rand2);
 						
-						list_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
+						list_s_data = socket(AF_INET, SOCK_STREAM, 0);
 						netBind(list_s_data, (struct sockaddr *) &servaddr, sizeof(servaddr));
 						netListen(list_s_data, 1);
 						
@@ -385,7 +385,7 @@ static void handleclient(u64 conn_s_p)
 						servaddr.sin_port	= htons((atoi(data[4]) * 256) + atoi(data[5]));
 						inet_pton(AF_INET, conn_ipaddr, &servaddr.sin_addr);
 						
-						conn_s_data = netSocket(AF_INET, SOCK_STREAM, 0);
+						conn_s_data = socket(AF_INET, SOCK_STREAM, 0);
 					
 						if(connect(conn_s_data, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0)
 						{
@@ -1130,23 +1130,23 @@ static void handleclient(u64 conn_s_p)
 				// close any active data connections
 				if(conn_s_data > -1)
 				{
-					netShutdown(conn_s_data, 2);
-					netClose(conn_s_data);
+					shutdown(conn_s_data, 2);
+					closesocket(conn_s_data);
 					conn_s_data = -1;
 				}
 				
 				if(list_s_data > -1)
 				{
-					netShutdown(list_s_data, 2);
-					netClose(list_s_data);
+					shutdown(list_s_data, 2);
+					closesocket(list_s_data);
 					list_s_data = -1;
 				}
 			}
 		}
 	}
 	
-	netShutdown(conn_s, 2);
-	netClose(conn_s);
+	shutdown(conn_s, 2);
+	closesocket(conn_s);
 	
 	sys_ppu_thread_exit(0);
 }
@@ -1185,7 +1185,7 @@ int main(int argc, const char* argv[])
 	// a very bad way to get ip :(
 	// todo: find another method
 	
-	int sip = netSocket(AF_INET, SOCK_STREAM, 0);
+	int sip = socket(AF_INET, SOCK_STREAM, 0);
 	
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family	= AF_INET;
@@ -1199,11 +1199,7 @@ int main(int argc, const char* argv[])
 
 		if(ret >= 0 && snf.local_adr.s_addr != 0)
 		{
-			sprintf(ipaddr, "%u.%u.%u.%u",
-				(snf.local_adr.s_addr & 0xFF000000) >> 24,
-				(snf.local_adr.s_addr & 0xFF0000) >> 16,
-				(snf.local_adr.s_addr & 0xFF00) >> 8,
-				(snf.local_adr.s_addr & 0xFF));
+			sprintf(ipaddr, inet_ntoa(servaddr.sin_addr));
 		}
 		else
 		{
@@ -1215,8 +1211,8 @@ int main(int argc, const char* argv[])
 		strcpy(ipaddr, "0.0.0.0");
 	}
 	
-	netShutdown(sip, 2);
-	netClose(sip);
+	shutdown(sip, 2);
+	closesocket(sip);
 	
 	// set up socket address structure
 	short int port = FTPPORT;
@@ -1226,7 +1222,7 @@ int main(int argc, const char* argv[])
 	servaddr.sin_port        = htons(port);
 	
 	// create listener socket
-	int list_s = netSocket(AF_INET, SOCK_STREAM, 0);
+	int list_s = socket(AF_INET, SOCK_STREAM, 0);
 	netBind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr));
 	netListen(list_s, LISTENQ);
 	
@@ -1292,8 +1288,8 @@ int main(int argc, const char* argv[])
 		currentBuffer = !currentBuffer;
 	}
 	
-	netShutdown(list_s, 2);
-	netClose(list_s);
+	shutdown(list_s, 2);
+	closesocket(list_s);
 	
 	netDeinitialize();
 	
