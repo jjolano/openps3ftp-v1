@@ -16,14 +16,125 @@
 #include <psl1ght/lv2/filesystem.h>
 
 #include <net/net.h>
-#include <lv2/process.h>
 
-#include <fcntl.h>
+#include <malloc.h>
+//#include <fcntl.h>
 
 #include "common.h"
-#include "helper.h"
 #include "ftpcmd.h"
 
+int ssend(int socket, const char* str)
+{
+	return send(socket, str, strlen(str), 0);
+}
+
+int ssocket(int listener, const char ipaddr[16], int port)
+{
+	int socketh = socket(AF_INET, SOCK_STREAM, 0);
+	
+	if(socketh > 0)
+	{
+		struct sockaddr_in sa;
+		memset(&sa, 0, sizeof(sa));
+		
+		sa.sin_family      = AF_INET;
+		sa.sin_port        = htons(port);
+		
+		if(listener)
+		{
+			sa.sin_addr.s_addr = htonl(INADDR_ANY);
+			bind(socketh, (struct sockaddr *)&sa, sizeof(sa));
+			listen(socketh, 8);
+		}
+		else
+		{
+			inet_pton(AF_INET, ipaddr, &sa.sin_addr);
+			return connect(socketh, (struct sockaddr *)&sa, sizeof(sa));
+		}
+	}
+	
+	return socketh;
+}
+
+void sclose(int socket)
+{
+	if(socket != -1)
+	{
+		shutdown(socket, SHUT_RDWR);
+		closesocket(socket);
+		socket = -1;
+	}
+}
+
+int recvfile(int socket, const char filename[256], int bufsize, s64 startpos)
+{
+	int ret = -1;
+	Lv2FsFile fd;
+	
+	if(lv2FsOpen(filename, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0) == 0)
+	{
+		char *buf = malloc(bufsize);
+		
+		if(buf != NULL)
+		{
+			u64 pos, written = 0;
+			
+			lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
+			
+			while(recv(socket, buf, bufsize, 0) > 0)
+			{
+				lv2FsWrite(fd, buf, (u64)bufsize, &written);
+				
+				if(written < (u64)bufsize)
+				{
+					break;
+				}
+			}
+			
+			ret = 0;
+			free(buf);
+		}
+	}
+	
+	lv2FsClose(fd);
+	return ret;
+}
+
+int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
+{
+	int ret = -1;
+	Lv2FsFile fd;
+	
+	if(lv2FsOpen(filename, LV2_O_RDONLY, &fd, 0, NULL, 0) == 0)
+	{
+		char *buf = malloc(bufsize);
+		
+		if(buf != NULL)
+		{
+			u64 pos, read;
+			
+			lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
+			
+			while(lv2FsRead(fd, buf, bufsize, &read) > 0)
+			{
+				send(socket, buf, (size_t)read, 0);
+				
+				if(read < (u64)bufsize)
+				{
+					break;
+				}
+			}
+			
+			ret = 0;
+			free(buf);
+		}
+	}
+	
+	lv2FsClose(fd);
+	return ret;
+}
+
+/*
 void cmd_user(const char* param, int conn_s, char username[32])
 {
 	if(strlen(param) > 0)
@@ -64,12 +175,8 @@ int cmd_pass(const char* param, int conn_s, const char* cmp)
 	return -1;
 }
 
-void cmd_pasv(int conn_s, int *data_s, u32 *rest)
+int cmd_pasv(int conn_s)
 {
-	*rest = 0;
-	
-	closeconn(*data_s);
-	
 	netSocketInfo snf;
 	
 	if(netGetSockInfo(conn_s, &snf, 1) == 0)
@@ -85,9 +192,9 @@ void cmd_pasv(int conn_s, int *data_s, u32 *rest)
 		servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 		servaddr.sin_port        = htons((p1 * 256) + p2);
 		
-		*data_s = netSocket(AF_INET, SOCK_STREAM, 0);
-		netBind(*data_s, (struct sockaddr *) &servaddr, sizeof(servaddr));
-		netListen(*data_s, 1);
+		int data_s = socket(AF_INET, SOCK_STREAM, 0);
+		bind(data_s, (struct sockaddr *) &servaddr, sizeof(servaddr));
+		netListen(data_s, 1);
 		
 		char output[64];
 		sprintf(output, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
@@ -99,26 +206,22 @@ void cmd_pasv(int conn_s, int *data_s, u32 *rest)
 		
 		swritel(conn_s, output);
 		
-		int temp = netAccept(*data_s, NULL, NULL);
+		int temp = accept(data_s, NULL, NULL);
+		
+		closeconn(data_s);
 		
 		if(temp > 0)
 		{
-			closeconn(*data_s);
-			*data_s = temp;
-			return;
+			return temp;
 		}
 	}
 	
 	swritel(conn_s, "550 Data socket error\r\n");
-	closeconn(*data_s);
+	return -1;
 }
 
-void cmd_port(const char* param, int conn_s, int *data_s, u32 *rest)
+int cmd_port(const char* param, int conn_s)
 {
-	*rest = 0;
-	
-	closeconn(*data_s);
-	
 	char userdata[24];
 	strcpy(userdata, param);
 	
@@ -135,7 +238,7 @@ void cmd_port(const char* param, int conn_s, int *data_s, u32 *rest)
 	if(i < 6)
 	{
 		swritel(conn_s, "501 Syntax error\r\n");
-		return;
+		return -1;
 	}
 	
 	char ipaddr[16];
@@ -147,16 +250,16 @@ void cmd_port(const char* param, int conn_s, int *data_s, u32 *rest)
 	servaddr.sin_port	= htons((atoi(data[4]) * 256) + atoi(data[5]));
 	inet_pton(AF_INET, ipaddr, &servaddr.sin_addr);
 	
-	*data_s = netSocket(AF_INET, SOCK_STREAM, 0);
+	int data_s = socket(AF_INET, SOCK_STREAM, 0);
 	
-	if(connect(*data_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) == 0)
+	if(connect(data_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) == 0)
 	{
 		swritel(conn_s, "200 PORT command successful\r\n");
 	}
 	else
 	{
 		swritel(conn_s, "550 PORT command failed\r\n");
-		closeconn(*data_s);
+		closeconn(data_s);
 	}
 }
 
@@ -174,7 +277,14 @@ void cmd_site(const char* param, int conn_s)
 		
 		simplesplit(cmdparam, temp, filename);
 		
-		sprintf(perms, "0%i", atoi(temp));
+		if(strlen(temp) == 4)
+		{
+			strcpy(perms, temp);
+		}
+		else
+		{
+			sprintf(perms, "0%s", temp);
+		}
 		
 		if(lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
 		{
@@ -314,4 +424,4 @@ void cmd_mlst(const char* param, int conn_s)
 {
 	
 }
-
+*/

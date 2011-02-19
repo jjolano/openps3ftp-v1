@@ -16,8 +16,6 @@
 #define FTPPORT		21	// port to start ftp server on (21 is standard)
 #define BUFFER_SIZE	16384	// the default buffer size used in file transfers, in bytes
 
-// compile with -DNOLOGIN to disable login checking
-
 // tested buffer values (smaller buffer size allows for more connections): 
 // <= 4096 - doesn't even connect
 // == 8192 - works, but transfer speed is a little lesser compared to 16k or 32k
@@ -42,15 +40,15 @@ const char* VERSION = "1.4";	// used in the welcome message and displayed on-scr
 #include <sys/thread.h>
 
 #include "common.h"
-#include "helper.h"
 #include "sconsole.h"
 #include "ftpcmd.h"
 
 // default login details
-const char* LOGIN_USERNAME = "root";
-const char* LOGIN_PASSWORD = "ab5b3a8c09da585c175de3e137424ee0"; // md5("openbox")
+#define D_USER		"root"
+#define D_PASS_MD5	"ab5b3a8c09da585c175de3e137424ee0" // md5("openbox") = ab5b3a8c09da585c175de3e137424ee0
 
-char passwd_md5[33];
+char pass_md5[33];
+char ipaddr[16];
 
 static char *client_cmds[] =
 {
@@ -156,7 +154,7 @@ void init_screen()
 
 void eventHandler(u64 status, u64 param, void * userdata)
 {
-	if(status == EVENT_REQUEST_EXITAPP) // 0x101
+	if(status == EVENT_REQUEST_EXITAPP)
 	{
 		exitapp = 1;
 	}
@@ -164,41 +162,32 @@ void eventHandler(u64 status, u64 param, void * userdata)
 
 static void handleclient(u64 conn_s_p)
 {
-	// todo: clean up
+	int conn_s = (int)conn_s_p; // main communications socket
+	int data_s = -1; // data socket
 	
-	int conn_s = (int)conn_s_p;
-	int list_s_data = -1;
-	int conn_s_data = -1;
-	int datareq = 0;
+	int connactive = 1; // whether the ftp connection is active or not
+	int dataactive = 0; // prevent the data connection from being closed at the end of the loop
+	int loggedin = 0; // whether the user is logged in or not
 	
-	char		cwd[256];
-	char		rnfr[256];
-	char		filename[256];
-	char		user[32];
-	u32		rest = 0;
-	int		authd = 0;
-	int		active = 1;
-	Lv2FsFile	tempfd;
-	char		buf[BUFFER_SIZE];
-
-	char	buffer[1024];
-	char	client_cmd[8][128];
-	ssize_t	bytes;
+	char cwd[256]; // Current Working Directory
+	s64 rest = 0; // for resuming file transfers
 	
-	// start directory
-	strcpy(cwd, "/");
+	char buffer[1024];
+	
+	strcpy(cwd, "/"); // starting directory
 	
 	// welcome message
-	swritel(conn_s, "220-OpenPS3FTP by @jjolano\r\n");
+	ssend(conn_s, "220-OpenPS3FTP by @jjolano\r\n");
 	sprintf(buffer, "220 Version %s\r\n", VERSION);
-	swritel(conn_s, buffer);
+	ssend(conn_s, buffer);
 	
-	while(exitapp == 0 && active && (bytes = sreadl(conn_s, buffer, 1024)) > 0)
+	while(exitapp == 0 && connactive == 1 && recv(conn_s, buffer, 1023, 0) > 0)
 	{
 		// get rid of the newline at the end of the string
 		buffer[strcspn(buffer, "\n")] = '\0';
 		buffer[strcspn(buffer, "\r")] = '\0';
 		
+		/*
 		// parse received string into array
 		int parameter_count = 0;
 		
@@ -1130,22 +1119,22 @@ static void handleclient(u64 conn_s_p)
 				// close any active data connections
 				if(conn_s_data > -1)
 				{
-					shutdown(conn_s_data, 2);
+					shutdown(conn_s_data, SHUT_RDWR);
 					closesocket(conn_s_data);
 					conn_s_data = -1;
 				}
 				
 				if(list_s_data > -1)
 				{
-					shutdown(list_s_data, 2);
+					shutdown(list_s_data, SHUT_RDWR);
 					closesocket(list_s_data);
 					list_s_data = -1;
 				}
 			}
-		}
+		}*/
 	}
 	
-	shutdown(conn_s, 2);
+	shutdown(conn_s, SHUT_RDWR);
 	closesocket(conn_s);
 	
 	sys_ppu_thread_exit(0);
@@ -1224,7 +1213,7 @@ int main(int argc, const char* argv[])
 	// create listener socket
 	int list_s = socket(AF_INET, SOCK_STREAM, 0);
 	netBind(list_s, (struct sockaddr *) &servaddr, sizeof(servaddr));
-	netListen(list_s, LISTENQ);
+	netListen(list_s, 10);
 	
 	sys_ppu_thread_t id;
 	sys_ppu_thread_create(&id, handleconnections, (u64)list_s, 1500, 0x400, 0, "ConnectionHandler");
@@ -1253,13 +1242,13 @@ int main(int argc, const char* argv[])
 		u64 read;
 		
 		lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0);
-		lv2FsRead(fd, passwd_md5, 32, &read);
+		lv2FsRead(fd, pass_md5, 32, &read);
 		lv2FsClose(fd);
 	}
 	
-	if(strlen(passwd_md5) != 32)
+	if(strlen(pass_md5) != 32)
 	{
-		strcpy(passwd_md5, LOGIN_PASSWORD);
+		strcpy(pass_md5, D_PASS_MD5);
 	}
 	
 	init_screen();
