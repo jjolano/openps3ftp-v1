@@ -13,14 +13,12 @@
 //    You should have received a copy of the GNU General Public License
 //    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <stdio.h>
-#include <string.h>
 #include <fcntl.h>
 
 #include <psl1ght/lv2/filesystem.h>
 
+#include "common.h"
 #include "md5.h"
-#include "functions.h"
 
 void absPath(char* absPath, const char* path, const char* cwd)
 {

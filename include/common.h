@@ -7,5 +7,6 @@
 #include <string.h>
 
 #include "functions.h"
+#include "ftpcmd.h"
 
 #endif /* _openps3ftp_common_ */
