@@ -56,13 +56,13 @@ int ssocket(int listener, const char ipaddr[16], int port)
 	return socketh;
 }
 
-void sclose(int socket)
+void sclose(int *socket)
 {
-	if(socket != -1)
+	if(*socket != -1)
 	{
-		shutdown(socket, SHUT_RDWR);
-		closesocket(socket);
-		socket = -1;
+		shutdown(*socket, SHUT_RDWR);
+		closesocket(*socket);
+		*socket = -1;
 	}
 }
 

@@ -170,7 +170,7 @@ static void handleclient(u64 conn_s_p)
 	int loggedin = 0; // whether the user is logged in or not
 	
 	char cwd[256]; // Current Working Directory
-	s64 rest = 0; // for resuming file transfers
+	int rest = 0; // for resuming file transfers
 	
 	char buffer[1024];
 	
@@ -186,6 +186,625 @@ static void handleclient(u64 conn_s_p)
 		// get rid of the newline at the end of the string
 		buffer[strcspn(buffer, "\n")] = '\0';
 		buffer[strcspn(buffer, "\r")] = '\0';
+		
+		char *cmd = strtok(buffer, " ");
+		
+		if(cmd == NULL)
+		{
+			strcpy(cmd, buffer);
+		}
+		
+		if(loggedin)
+		{
+			// available commands when logged in
+			if(strcasecmp(cmd, "CWD") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				char tempcwd[256];
+				strcpy(tempcwd, cwd);
+				
+				if(param != NULL)
+				{
+					absPath(tempcwd, param + 1, cwd);
+				}
+				
+				if(isDir(tempcwd))
+				{
+					strcpy(cwd, tempcwd);
+					ssend(conn_s, "250 CWD command successful\r\n");
+				}
+				else
+				{
+					ssend(conn_s, "550 Cannot access directory\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "CDUP") == 0)
+			{
+
+			}
+			else
+			if(strcasecmp(cmd, "PASV") == 0)
+			{
+				rest = 0;
+				
+				int data_ls = ssocket(1, NULL, FTPPORT);
+				
+			}
+			else
+			if(strcasecmp(cmd, "PORT") == 0)
+			{
+				rest = 0;
+				
+				
+			}
+			else
+			if(strcasecmp(cmd, "LIST") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				char tempcwd[256];
+				strcpy(tempcwd, cwd);
+				
+				if(param != NULL)
+				{
+					absPath(tempcwd, param + 1, cwd);
+				}
+				
+				if(isDir(tempcwd))
+				{
+					
+				}
+				else
+				{
+					ssend(conn_s, "550 Cannot access directory\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "MLSD") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				char tempcwd[256];
+				strcpy(tempcwd, cwd);
+				
+				if(param != NULL)
+				{
+					absPath(tempcwd, param + 1, cwd);
+				}
+				
+				if(isDir(tempcwd))
+				{
+					
+				}
+				else
+				{
+					ssend(conn_s, "550 Cannot access directory\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "STOR") == 0)
+			{
+				if(data_s > 0)
+				{
+					char *param = strchr(buffer, ' ');
+					
+					if(param != NULL)
+					{
+						char filename[256];
+						absPath(filename, param + 1, cwd);
+						
+						ssend(conn_s, "150 Accepted data connection\r\n");
+						
+						if(recvfile(data_s, filename, BUFFER_SIZE, (s64)rest) == 0)
+						{
+							ssend(conn_s, "226 Transfer complete\r\n");
+						}
+						else
+						{
+							ssend(conn_s, "451 Transfer failed\r\n");
+						}
+					}
+					else
+					{
+						ssend(conn_s, "501 No file specified\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "425 No data connection\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "RETR") == 0)
+			{
+				if(data_s > 0)
+				{
+					char *param = strchr(buffer, ' ');
+					
+					if(param != NULL)
+					{
+						char filename[256];
+						absPath(filename, param + 1, cwd);
+						
+						if(exists(filename) == 0)
+						{
+							ssend(conn_s, "150 Accepted data connection\r\n");
+							
+							if(sendfile(data_s, filename, BUFFER_SIZE, (s64)rest) == 0)
+							{
+								ssend(conn_s, "226 Transfer complete\r\n");
+							}
+							else
+							{
+								ssend(conn_s, "451 Transfer failed\r\n");
+							}
+						}
+						else
+						{
+							ssend(conn_s, "550 File does not exist\r\n");
+						}
+					}
+					else
+					{
+						ssend(conn_s, "501 No file specified\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "425 No data connection\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "PWD") == 0)
+			{
+				sprintf(buffer, "257 \"%s\" is the current directory\r\n", cwd);
+				ssend(conn_s, buffer);
+			}
+			else
+			if(strcasecmp(cmd, "TYPE") == 0)
+			{
+				ssend(conn_s, "200 TYPE command successful\r\n");
+			}
+			else
+			if(strcasecmp(cmd, "REST") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					rest = atoi(param + 1);
+					ssend(conn_s, "350 REST command successful\r\n");
+				}
+				else
+				{
+					ssend(conn_s, "501 No restart point\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "DELE") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					char filename[256];
+					absPath(filename, param + 1, cwd);
+					
+					if(lv2FsUnlink(filename) == 0)
+					{
+						ssend(conn_s, "250 File successfully deleted\r\n");
+					}
+					else
+					{
+						ssend(conn_s, "550 Cannot delete file\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No filename specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "MKD") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					char filename[256];
+					absPath(filename, param + 1, cwd);
+					
+					if(lv2FsMkdir(filename, 0755) == 0)
+					{
+						sprintf(buffer, "257 \"%s\" was successfully created\r\n", param);
+						ssend(conn_s, buffer);
+					}
+					else
+					{
+						ssend(conn_s, "550 Cannot create directory\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No filename specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "RMD") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					char filename[256];
+					absPath(filename, param + 1, cwd);
+					
+					if(lv2FsRmdir(filename) == 0)
+					{
+						ssend(conn_s, "250 Directory was successfully removed\r\n");
+					}
+					else
+					{
+						ssend(conn_s, "550 Cannot remove directory\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No filename specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "RNFR") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					ssend(conn_s, "350 RNFR command successful\r\n");
+					
+					if(recv(conn_s, buffer, 1023, 0) > 0)
+					{
+						cmd = strtok(buffer, " ");
+						
+						if(cmd == NULL)
+						{
+							strcpy(cmd, buffer);
+						}
+						
+						if(strcasecmp(cmd, "RNTO") == 0)
+						{
+							char *param2 = strchr(buffer, ' ');
+							
+							if(param2 != NULL)
+							{
+								char rnfr[256], rnto[256];
+								absPath(rnfr, param + 1, cwd);
+								absPath(rnto, param2 + 1, cwd);
+								
+								if(lv2FsRename(rnfr, rnto) == 0)
+								{
+									ssend(conn_s, "250 File was successfully renamed or moved\r\n");
+								}
+								else
+								{
+									ssend(conn_s, "550 Cannot rename or move file\r\n");
+								}
+							}
+							else
+							{
+								ssend(conn_s, "501 No file specified\r\n");
+							}
+						}
+						else
+						{
+							ssend(conn_s, "503 Bad command sequence\r\n");
+						}
+					}
+					else
+					{
+						// error in recv, disconnect
+						connactive = 0;
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No file specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "SITE") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					cmd = strtok(param + 1, " ");
+					
+					if(cmd == NULL)
+					{
+						strcpy(cmd, param + 1);
+					}
+					
+					if(strcasecmp(cmd, "CHMOD") == 0)
+					{
+						char *param2 = strchr(param + 1, ' ');
+						
+						if(param2 != NULL)
+						{
+							char *temp = strtok(param2 + 1, " ");
+							char *filename = strchr(param2 + 1, ' ');
+							
+							if(temp != NULL && filename != NULL)
+							{
+								char perms[4];
+						
+								if(strlen(temp) == 4)
+								{
+									strcpy(perms, temp);
+								}
+								else
+								{
+									sprintf(perms, "0%s", temp);
+								}
+		
+								if(lv2FsChmod(filename + 1, S_IFMT | strtol(perms, NULL, 8)) == 0)
+								{
+									ssend(conn_s, "250 File permissions successfully set\r\n");
+								}
+								else
+								{
+									ssend(conn_s, "550 Cannot set file permissions\r\n");
+								}
+							}
+							else
+							{
+								ssend(conn_s, "501 Not enough parameters\r\n");
+							}
+						}
+						else
+						{
+							ssend(conn_s, "501 No parameters given\r\n");
+						}
+					}
+					else
+					if(strcasecmp(cmd, "HELP") == 0)
+					{
+						ssend(conn_s, "214-Special OpenPS3FTP commands:\r\n");
+						ssend(conn_s, " SITE PASSWD <newpassword> - Change your password\r\n");
+						ssend(conn_s, " SITE EXITAPP - Remotely quit OpenPS3FTP\r\n");
+						ssend(conn_s, " SITE HELP - Show this message\r\n");
+						ssend(conn_s, "214 End\r\n");
+					}
+					else
+					if(strcasecmp(cmd, "PASSWD") == 0)
+					{
+						char *param2 = strchr(param + 1, ' ');
+						
+						if(param2 != NULL)
+						{
+							char md5pass[33];
+							md5(md5pass, param2 + 1);
+							
+							Lv2FsFile fd;
+							u64 written;
+							
+							if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0) == 0)
+							{
+								lv2FsWrite(fd, md5pass, 32, &written);
+								ssend(conn_s, "200 FTP password successfully changed\r\n");
+							}
+							else
+							{
+								ssend(conn_s, "550 Cannot change FTP password\r\n");
+							}
+						
+							lv2FsClose(fd);
+						}
+						else
+						{
+							ssend(conn_s, "501 No password given\r\n");
+						}
+					}
+					else
+					if(strcasecmp(cmd, "EXITAPP") == 0)
+					{
+						ssend(conn_s, "221 Exiting OpenPS3FTP\r\n");
+						exitapp = 1;
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No SITE command specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "NOOP") == 0)
+			{
+				ssend(conn_s, "200 NOOP command successful\r\n");
+			}
+			else
+			if(strcasecmp(cmd, "NLST") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				char tempcwd[256];
+				strcpy(tempcwd, cwd);
+				
+				if(param != NULL)
+				{
+					absPath(tempcwd, param + 1, cwd);
+				}
+				
+				if(isDir(tempcwd))
+				{
+					
+				}
+				else
+				{
+					ssend(conn_s, "550 Cannot access directory\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "MLST") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				char tempcwd[256];
+				strcpy(tempcwd, cwd);
+				
+				if(param != NULL)
+				{
+					absPath(tempcwd, param + 1, cwd);
+				}
+				
+				if(isDir(tempcwd))
+				{
+					
+				}
+				else
+				{
+					ssend(conn_s, "550 Cannot access directory\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "QUIT") == 0 || strcasecmp(cmd, "BYE") == 0)
+			{
+				ssend(conn_s, "221 Bye!\r\n");
+				connactive = 0;
+			}
+			else
+			if(strcasecmp(cmd, "FEAT") == 0)
+			{
+				ssend(conn_s, "211-Extensions supported:\r\n");
+				
+				static char *feat_cmds[] =
+				{
+					"PASV",
+					"PORT",
+					"SIZE",
+					"REST STREAM",
+					"SITE CHMOD",
+					"SITE PASSWD",
+					"SITE EXITAPP",
+					"MLSD",
+					"MLST type*;size*;modify*;UNIX.mode*;UNIX.uid*;UNIX.gid*;",
+					"CDUP"
+				};
+				
+				const int feat_cmds_count = sizeof(feat_cmds) / sizeof(char *);
+				
+				for(int i = 0; i < feat_cmds_count; i++)
+				{
+					sprintf(buffer, " %s\r\n", feat_cmds[i]);
+					ssend(conn_s, buffer);
+				}
+				
+				ssend(conn_s, "211 End\r\n");
+			}
+			else
+			if(strcasecmp(cmd, "SIZE") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+			}
+			else
+			if(strcasecmp(cmd, "SYST") == 0)
+			{
+				ssend(conn_s, "215 UNIX Type: L8\r\n");
+			}
+			else
+			if(strcasecmp(cmd, "USER") == 0 || strcasecmp(cmd, "PASS") == 0)
+			{
+				ssend(conn_s, "230 You are already logged in\r\n");
+			}
+			else
+			{
+				sprintf(buffer, "500 Unrecognized command: \"%s\"\r\n", cmd);
+				ssend(conn_s, buffer);
+			}
+			
+			if(dataactive == 1)
+			{
+				dataactive = 0;
+			}
+			else
+			{
+				sclose(&data_s);
+			}
+		}
+		else
+		{
+			// available commands when not logged in
+			if(strcasecmp(cmd, "USER") == 0)
+			{
+				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					sprintf(buffer, "331 User %s OK. Password required\r\n", param);
+					ssend(conn_s, buffer);
+					
+					if(recv(conn_s, buffer, 1023, 0) > 0)
+					{
+						cmd = strtok(buffer, " ");
+						
+						if(cmd == NULL)
+						{
+							strcpy(cmd, buffer);
+						}
+						
+						if(strcasecmp(cmd, "PASS") == 0)
+						{
+							char *param2 = strchr(buffer, ' ');
+							
+							if(param2 != NULL)
+							{
+								char userpass_md5[33];
+								md5(userpass_md5, param2 + 1);
+								
+								if(strcmp(D_USER, param + 1) == 0 && strcmp(D_PASS_MD5, userpass_md5) == 0)
+								{
+									ssend(conn_s, "230 Welcome to your PS3!\r\n");
+									loggedin = 1;
+								}
+								else
+								{
+									ssend(conn_s, "430 Invalid username or password\r\n");
+								}
+							}
+							else
+							{
+								ssend(conn_s, "501 No password given\r\n");
+							}
+						}
+						else
+						{
+							ssend(conn_s, "503 Bad command sequence\r\n");
+						}
+					}
+					else
+					{
+						// error in recv, disconnect
+						connactive = 0;
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No user specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "QUIT") == 0 || strcasecmp(cmd, "BYE") == 0)
+			{
+				ssend(conn_s, "221 Bye!\r\n");
+				connactive = 0;
+			}
+			else
+			{
+				ssend(conn_s, "530 Not logged in\r\n");
+			}
+		}
 		
 		/*
 		// parse received string into array
