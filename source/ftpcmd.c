@@ -21,41 +21,64 @@
 
 #include "common.h"
 
+int recvline(int socket, char* str, int maxlen)
+{
+	int i = 0;
+	char c;
+	
+	while(i < maxlen)
+	{
+		if(recv(socket, &c, 1, 0) == -1)
+		{
+			return -1;
+		}
+		
+		str[i++] = c;
+
+		if(c == '\n')
+		{
+			break;
+		}
+	}
+	
+	str[i] = '\0';
+	return i;
+}
+
 int ssend(int socket, const char* str)
 {
 	return send(socket, str, strlen(str), 0);
 }
 
-int ssocket(int listener, const char ipaddr[16], int port)
+int slisten(int port)
 {
-	int socketh = socket(AF_INET, SOCK_STREAM, 0);
+	int list_s = socket(AF_INET, SOCK_STREAM, 0);
 	
-	if(socketh > 0)
-	{
-		struct sockaddr_in sa;
-		memset(&sa, 0, sizeof(sa));
-		
-		sa.sin_family      = AF_INET;
-		sa.sin_port        = htons(port);
-		
-		if(listener)
-		{
-			sa.sin_addr.s_addr = htonl(INADDR_ANY);
-			bind(socketh, (struct sockaddr *)&sa, sizeof(sa));
-			listen(socketh, 8);
-		}
-		else
-		{
-			inet_pton(AF_INET, ipaddr, &sa.sin_addr);
-			if(connect(socketh, (struct sockaddr *)&sa, sizeof(sa)) != 0)
-			{
-				sclose(&socketh);
-				return -1;
-			}
-		}
-	}
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof(sa));
 	
-	return socketh;
+	sa.sin_family      = AF_INET;
+	sa.sin_port        = htons(port);
+	sa.sin_addr.s_addr = htonl(INADDR_ANY);
+	
+	bind(list_s, (struct sockaddr *)&sa, sizeof(sa));
+	listen(list_s, 8);
+	
+	return list_s;
+}
+
+int sconnect(int *conn_s, const char* ipaddr, int port)
+{
+	*conn_s = socket(AF_INET, SOCK_STREAM, 0);
+	
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof(sa));
+	
+	sa.sin_family      = AF_INET;
+	sa.sin_port        = htons(port);
+	inet_pton(AF_INET, ipaddr, &sa.sin_addr);
+	
+	return connect(*conn_s, (struct sockaddr *)&sa, sizeof(sa));
 }
 
 void sclose(int *socket)
@@ -83,7 +106,7 @@ int recvfile(int socket, const char filename[256], int bufsize, s64 startpos)
 			
 			lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
 			
-			while(recv(socket, buf, bufsize, 0) > 0)
+			while(recv(socket, buf, bufsize, MSG_WAITALL) > 0)
 			{
 				lv2FsWrite(fd, buf, (u64)bufsize, &written);
 				

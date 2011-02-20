@@ -15,6 +15,7 @@
 
 #define FTPPORT		21	// port to start ftp server on (21 is standard)
 #define BUFFER_SIZE	16384	// the default buffer size used in file transfers, in bytes
+#define DISABLE_PASS	0	// whether or not to disable the checking of the password (1 - yes, 0 - no)
 
 // tested buffer values (smaller buffer size allows for more connections): 
 // <= 4096 - doesn't even connect
@@ -47,7 +48,7 @@ const char* VERSION = "1.4-dev";	// used in the welcome message and displayed on
 #define D_PASS_MD5	"ab5b3a8c09da585c175de3e137424ee0" // md5("openbox") = ab5b3a8c09da585c175de3e137424ee0
 
 char pass_md5[33];
-char netstat[64];
+char status[128];
 
 int exitapp = 0;
 int currentBuffer = 0;
@@ -156,8 +157,8 @@ static void handleclient(u64 conn_s_p)
 	int p1 = (rand() % 251) + 4;
 	int p2 = rand() % 256;
 	
-	char pasv_output[16];
-	sprintf(pasv_output, "%u,%u,%u,%u,%i,%i",
+	char pasv_output[64];
+	sprintf(pasv_output, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
 		(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
 		(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
 		p1, p2);
@@ -170,20 +171,16 @@ static void handleclient(u64 conn_s_p)
 	sprintf(buffer, "220 Version %s\r\n", VERSION);
 	ssend(conn_s, buffer);
 	
-	while(exitapp == 0 && connactive == 1 && recv(conn_s, buffer, 1023, 0) > 0)
+	while(exitapp == 0 && connactive == 1 && recvline(conn_s, buffer, 1023) > 0)
 	{
 		// get rid of the newline at the end of the string
 		buffer[strcspn(buffer, "\n")] = '\0';
 		buffer[strcspn(buffer, "\r")] = '\0';
 		
-		char *cmd = strtok(buffer, " ");
+		char cmd[32];
+		supto(cmd, 31, buffer, ' ');
 		
-		if(cmd == NULL)
-		{
-			strcpy(cmd, buffer);
-		}
-		
-		if(loggedin)
+		if(loggedin == 1)
 		{
 			// available commands when logged in
 			if(strcasecmp(cmd, "CWD") == 0)
@@ -200,8 +197,9 @@ static void handleclient(u64 conn_s_p)
 				
 				if(isDir(tempcwd))
 				{
-					sprintf(buffer, "250 Directory change successful: %s\r\n", tempcwd);
-					ssend(conn_s, buffer);
+					char temp[1024];
+					sprintf(temp, "250 Directory change successful: %s\r\n", tempcwd);
+					ssend(conn_s, temp);
 					strcpy(cwd, tempcwd);
 				}
 				else
@@ -212,8 +210,9 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "CDUP") == 0)
 			{
-				sprintf(buffer, "250 Directory change successful: %s\r\n", cwd);
-				ssend(conn_s, buffer);
+				char temp[1024];
+				sprintf(temp, "250 Directory change successful: %s\r\n", cwd);
+				ssend(conn_s, temp);
 				
 				for(int i = strlen(cwd) - 2; i > 0; i--)
 				{
@@ -232,12 +231,11 @@ static void handleclient(u64 conn_s_p)
 			{
 				rest = 0;
 				
-				int data_ls = ssocket(1, NULL, FTPPORT);
+				int data_ls = slisten(((p1 * 256) + p2));
 				
 				if(data_ls > 0)
 				{
-					sprintf(buffer, "227 Entering Passive Mode (%s)\r\n", pasv_output);
-					ssend(conn_s, buffer);
+					ssend(conn_s, pasv_output);
 					
 					data_s = accept(data_ls, NULL, NULL);
 					
@@ -281,9 +279,7 @@ static void handleclient(u64 conn_s_p)
 						char ipaddr[16];
 						sprintf(ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
 						
-						data_s = ssocket(0, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5])));
-						
-						if(data_s == 0)
+						if(sconnect(&data_s, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5]))) == 0)
 						{
 							ssend(conn_s, "200 PORT command successful\r\n");
 							dataactive = 1;
@@ -334,7 +330,8 @@ static void handleclient(u64 conn_s_p)
 							char timebuf[16];
 							strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
 							
-							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %i %s %s\r\n",
+							char temp[1024];
+							sprintf(temp, "%s%s%s%s%s%s%s%s%s%s 1 root root %i %s %s\r\n",
 								((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
 								((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 								((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
@@ -347,10 +344,19 @@ static void handleclient(u64 conn_s_p)
 								((buf.st_mode & S_IXOTH) != 0) ? "x" : "-",
 								(int)buf.st_size, timebuf, entry->d_name);
 							
-							ssend(data_s, buffer);
+							ssend(data_s, temp);
 						}
 						
-						slist(tempcwd, listcb);
+						ssend(conn_s, "150 Accepted data connection\r\n");
+						
+						if(slist(tempcwd, listcb) != -1)
+						{
+							ssend(conn_s, "226 Transfer complete\r\n");
+						}
+						else
+						{
+							ssend(conn_s, "550 Cannot access directory\r\n");
+						}
 					}
 					else
 					{
@@ -401,8 +407,10 @@ static void handleclient(u64 conn_s_p)
 								strcpy(dirtype, "p");
 							}
 							
-							sprintf(buffer, "type=%s%s;size=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-								dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file", (int)buf.st_size, timebuf,
+							char temp[1024];
+							sprintf(temp, "type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+								dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+								((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (int)buf.st_size, timebuf,
 								(((buf.st_mode & S_IRUSR) != 0) * 4 +
 								((buf.st_mode & S_IWUSR) != 0) * 2 +
 								((buf.st_mode & S_IXUSR) != 0) * 1),
@@ -414,10 +422,19 @@ static void handleclient(u64 conn_s_p)
 								((buf.st_mode & S_IXOTH) != 0) * 1),
 								entry->d_name);
 							
-							ssend(data_s, buffer);
+							ssend(data_s, temp);
 						}
 						
-						slist(tempcwd, listcb);
+						ssend(conn_s, "150 Accepted data connection\r\n");
+						
+						if(slist(tempcwd, listcb) != -1)
+						{
+							ssend(conn_s, "226 Transfer complete\r\n");
+						}
+						else
+						{
+							ssend(conn_s, "550 Cannot access directory\r\n");
+						}
 					}
 					else
 					{
@@ -505,8 +522,9 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "PWD") == 0)
 			{
-				sprintf(buffer, "257 \"%s\" is the current directory\r\n", cwd);
-				ssend(conn_s, buffer);
+				char temp[1024];
+				sprintf(temp, "257 \"%s\" is the current directory\r\n", cwd);
+				ssend(conn_s, temp);
 			}
 			else
 			if(strcasecmp(cmd, "TYPE") == 0)
@@ -565,8 +583,9 @@ static void handleclient(u64 conn_s_p)
 					
 					if(lv2FsMkdir(filename, 0755) == 0)
 					{
-						sprintf(buffer, "257 \"%s\" was successfully created\r\n", param);
-						ssend(conn_s, buffer);
+						char temp[1024];
+						sprintf(temp, "257 \"%s\" was successfully created\r\n", param);
+						ssend(conn_s, temp);
 					}
 					else
 					{
@@ -611,14 +630,10 @@ static void handleclient(u64 conn_s_p)
 				{
 					ssend(conn_s, "350 RNFR accepted - ready for destination\r\n");
 					
-					if(recv(conn_s, buffer, 1023, 0) > 0)
+					if(recvline(conn_s, buffer, 1023) > 0)
 					{
-						cmd = strtok(buffer, " ");
-						
-						if(cmd == NULL)
-						{
-							strcpy(cmd, buffer);
-						}
+						char cmd[32];
+						supto(cmd, 31, buffer, ' ');
 						
 						if(strcasecmp(cmd, "RNTO") == 0)
 						{
@@ -667,12 +682,8 @@ static void handleclient(u64 conn_s_p)
 				
 				if(param != NULL)
 				{
-					cmd = strtok(param + 1, " ");
-					
-					if(cmd == NULL)
-					{
-						strcpy(cmd, param + 1);
-					}
+					char cmd[32];
+					supto(cmd, 31, param + 1, ' ');
 					
 					if(strcasecmp(cmd, "CHMOD") == 0)
 					{
@@ -680,21 +691,13 @@ static void handleclient(u64 conn_s_p)
 						
 						if(param2 != NULL)
 						{
-							char *temp = strtok(param2 + 1, " ");
 							char *filename = strchr(param2 + 1, ' ');
 							
-							if(temp != NULL && filename != NULL)
+							if(filename != NULL)
 							{
-								char perms[4];
-						
-								if(strlen(temp) == 4)
-								{
-									strcpy(perms, temp);
-								}
-								else
-								{
-									sprintf(perms, "0%s", temp);
-								}
+								char perms[4], temp[4];
+								supto(temp, 3, param2 + 1, ' ');
+								sprintf(perms, "0%s", temp);
 		
 								if(lv2FsChmod(filename + 1, S_IFMT | strtol(perms, NULL, 8)) == 0)
 								{
@@ -793,7 +796,16 @@ static void handleclient(u64 conn_s_p)
 							ssend(data_s, entry->d_name);
 						}
 						
-						slist(tempcwd, listcb);
+						ssend(conn_s, "150 Accepted data connection\r\n");
+						
+						if(slist(tempcwd, listcb) != -1)
+						{
+							ssend(conn_s, "226 Transfer complete\r\n");
+						}
+						else
+						{
+							ssend(conn_s, "550 Cannot access directory\r\n");
+						}
 					}
 					else
 					{
@@ -842,8 +854,10 @@ static void handleclient(u64 conn_s_p)
 							strcpy(dirtype, "p");
 						}
 						
-						sprintf(buffer, " type=%s%s;size=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file", (int)buf.st_size, timebuf,
+						char temp[1024];
+						sprintf(temp, " type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (int)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
 							((buf.st_mode & S_IWUSR) != 0) * 2 +
 							((buf.st_mode & S_IXUSR) != 0) * 1),
@@ -855,10 +869,12 @@ static void handleclient(u64 conn_s_p)
 							((buf.st_mode & S_IXOTH) != 0) * 1),
 							entry->d_name);
 						
-						ssend(conn_s, buffer);
+						ssend(conn_s, temp);
 					}
 					
+					ssend(conn_s, "250-Directory Listing\r\n");
 					slist(tempcwd, listcb);
+					ssend(conn_s, "250 End\r\n");
 				}
 				else
 				{
@@ -913,8 +929,9 @@ static void handleclient(u64 conn_s_p)
 					Lv2FsStat buf;
 					if(lv2FsStat(filename, &buf) == 0)
 					{
-						sprintf(buffer, "%i %i", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (int)buf.st_size);
-						ssend(conn_s, buffer);
+						char temp[256];
+						sprintf(temp, "%i %i", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (int)buf.st_size);
+						ssend(conn_s, temp);
 					}
 					else
 					{
@@ -938,8 +955,7 @@ static void handleclient(u64 conn_s_p)
 			}
 			else
 			{
-				sprintf(buffer, "500 Unrecognized command: \"%s\"\r\n", cmd);
-				ssend(conn_s, buffer);
+				ssend(conn_s, "500 Unrecognized command\r\n");
 			}
 			
 			if(dataactive == 1)
@@ -960,17 +976,14 @@ static void handleclient(u64 conn_s_p)
 				
 				if(param != NULL)
 				{
-					sprintf(buffer, "331 User %s OK. Password required\r\n", param);
-					ssend(conn_s, buffer);
+					char temp[1024];
+					sprintf(temp, "331 User %s OK. Password required\r\n", param);
+					ssend(conn_s, temp);
 					
-					if(recv(conn_s, buffer, 1023, 0) > 0)
+					if(recvline(conn_s, buffer, 1023) > 0)
 					{
-						cmd = strtok(buffer, " ");
-						
-						if(cmd == NULL)
-						{
-							strcpy(cmd, buffer);
-						}
+						char cmd[32];
+						supto(cmd, 31, buffer, ' ');
 						
 						if(strcasecmp(cmd, "PASS") == 0)
 						{
@@ -981,9 +994,9 @@ static void handleclient(u64 conn_s_p)
 								char userpass_md5[33];
 								md5(userpass_md5, param2 + 1);
 								
-								if(strcmp(D_USER, param + 1) == 0 && strcmp(D_PASS_MD5, userpass_md5) == 0)
+								if((strcmp(D_USER, param + 1) == 0 && strcmp(D_PASS_MD5, userpass_md5) == 0) || DISABLE_PASS)
 								{
-									ssend(conn_s, "230 Welcome to your PS3!\r\n");
+									ssend(conn_s, "230 Welcome to OpenPS3FTP\r\n");
 									loggedin = 1;
 								}
 								else
@@ -1031,20 +1044,28 @@ static void handleclient(u64 conn_s_p)
 	sys_ppu_thread_exit(0);
 }
 
-static void handleconnections(u64 list_s_p)
+static void handleconnections(u64 unused)
 {
-	int list_s = (int)list_s_p;
-	int conn_s;
+	int list_s = slisten(FTPPORT);
 	
-	while(exitapp == 0)
+	if(list_s > 0)
 	{
-		if((conn_s = netAccept(list_s, NULL, NULL)) > 0)
+		int conn_s;
+		sys_ppu_thread_t id;
+		
+		strcpy(status, "Status: Listening for connections");
+		
+		while(exitapp == 0)
 		{
-			sys_ppu_thread_t id;
-			sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, BUFFER_SIZE * 2, 0, "ClientCmdHandler");
-			
-			usleep(100000); // this should solve some connection issues
+			if((conn_s = accept(list_s, NULL, NULL)) > 0)
+			{
+				sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, (BUFFER_SIZE * 2), 0, "ClientCmdHandler");
+				
+				usleep(100000); // this should solve some connection issues
+			}
 		}
+		
+		sclose(&list_s);
 	}
 	
 	sys_ppu_thread_exit(0);
@@ -1054,112 +1075,108 @@ static void ipaddr_get(u64 unused)
 {
 	// temporary method until something new comes up
 	// will work only if internet connection is available
-	int conn_s = ssocket(0, "8.8.8.8", 53);
 	
-	if(conn_s > 0)
+	sys_ppu_thread_yield();
+	
+	int ip_s;
+	netSocketInfo snf;
+	
+	// connect to some server and add to the status message
+	if(sconnect(&ip_s, "8.8.8.8", 53) == 0 && netGetSockInfo(ip_s, &snf, 1) == 0)
 	{
-		netSocketInfo snf;
-		netGetSockInfo(conn_s, &snf, 1);
-		
-		sprintf(netstat, "Active; IP: %u.%u.%u.%u Port: %i",
+		sprintf(status, "%s (IP: %u.%u.%u.%u Port: %i)", status,
 			(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
 			(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
 			FTPPORT);
 		
-		sclose(&conn_s);
+		//sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(snf.remote_adr), FTPPORT);
 	}
 	else
 	{
-		strcpy(netstat, "Active; IP Retrieval Failed");
+		strcat(status, " - IP Address Retrieval Failed");
 	}
+	
+	sclose(&ip_s);
 	
 	sys_ppu_thread_exit(0);
 }
 
 int main(int argc, const char* argv[])
 {
+	// handle XMB quit game
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
-	netInitialize();
 	
-	char version[16], status[128];
-	int x, j, rwflashmount = 0;
-	
-	int list_s = ssocket(1, NULL, FTPPORT);
-	
-	if(list_s > 0)
-	{
-		// start connection handler
-		sys_ppu_thread_t id;
-		sys_ppu_thread_create(&id, handleconnections, (u64)list_s, 1500, 0x400, 0, "ConnectionHandler");
-		
-		// try to get the ip address
-		sys_ppu_thread_t id2;
-		sys_ppu_thread_create(&id2, ipaddr_get, 0, 1500, 0x400, 0, "GetIPAddress");
-		
-		strcpy(netstat, "Active");
-	}
+	// format version string
+	char version[16];
+	sprintf(version, "Version %s", VERSION);
 	
 	// check if dev_flash is mounted rw
-	if(exists("/dev_blind") == 0 || exists("/dev_rwflash") == 0 || exists("/dev_fflash") == 0 || exists("/dev_Alejandro") == 0)
-	{
-		rwflashmount = 1;
-	}
+	int rwflashmount = (exists("/dev_blind") == 0 || exists("/dev_rwflash") == 0 || exists("/dev_fflash") == 0 || exists("/dev_Alejandro") == 0);
 	
 	// load password file
-	if(exists("/dev_hdd0/game/OFTP00001/USRDIR/passwd") == 0)
+	Lv2FsFile fd;
+	if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0) == 0)
 	{
-		Lv2FsFile fd;
 		u64 read;
-		
-		lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0);
 		lv2FsRead(fd, pass_md5, 32, &read);
-		lv2FsClose(fd);
 	}
 	
+	lv2FsClose(fd);
+	
+	// use default password if the loaded one is invalid
 	if(strlen(pass_md5) != 32)
 	{
 		strcpy(pass_md5, D_PASS_MD5);
 	}
 	
+	// prepare for screen printing
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_GREEN, res.width, res.height);
 	
-	waitFlip();
+	// initialize libnet
+	netInitialize();
 	
+	sys_ppu_thread_t id;
+	
+	// start listening for connections
+	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
+	
+	// try to get the ip address
+	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "GetIPAddress");
+	
+	// print stuff to the screen
+	int x, y;
 	while(exitapp == 0)
 	{
+		waitFlip();
 		sysCheckCallback();
 		
-		for(x = 0; x < res.height; x++)
+		for(y = 0; y < res.height; y++)
 		{
-			for(j = 0; j < res.width; j++)
+			for(x = 0; x < res.width; x++)
 			{
-				buffers[currentBuffer]->ptr[x * res.width + j] = FONT_COLOR_BLACK;
+				buffers[currentBuffer]->ptr[y * res.width + x] = FONT_COLOR_BLACK; // background
 			}
 		}
    		
 		print(50, 50, "OpenPS3FTP by jjolano (Twitter: @jjolano)", buffers[currentBuffer]->ptr);
 		print(50, 90, version, buffers[currentBuffer]->ptr);
-		print(50, 150, "Note: IP address retrieval is experimental - you can always find your console's IP address by navigating to Network Settings -> Status.", buffers[currentBuffer]->ptr);
 		
-		sprintf(status, "Status: %s", netstat);
-		print(50, 250, status, buffers[currentBuffer]->ptr);
+		print(50, 150, status, buffers[currentBuffer]->ptr);
+		print(50, 200, "Note: IP address retrieval is experimental.", buffers[currentBuffer]->ptr);
+		print(50, 240, "You can always find your console's IP address by navigating to Network Settings -> Status.", buffers[currentBuffer]->ptr);
 		
 		if(rwflashmount == 1)
 		{
-			print(50, 350, "Warning: A _writable_ mountpoint that points to dev_flash was detected. Please exercise caution when browsing through any of these directories: /dev_blind /dev_rwflash /dev_fflash /dev_Alejandro", buffers[currentBuffer]->ptr);
+			print(50, 300, "Warning: A writable mountpoint that points to dev_flash was detected. Be careful!", buffers[currentBuffer]->ptr);
 		}
 		
 		flip(currentBuffer);
-		waitFlip();
 		currentBuffer = !currentBuffer;
 	}
 	
-	sclose(&list_s);
-	
+	// uninitialize libnet - kills all libnet connections
 	netDeinitialize();
-	sleep(1); // allow any active connections to disconnect
-	
 	return 0;
 }
 

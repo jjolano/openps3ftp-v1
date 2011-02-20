@@ -19,8 +19,8 @@ PKGFILES	:=	release
 SFOXML		:=	sfo.xml
 ICON0		:=	ICON0.PNG
 
-CFLAGS		+= -Os -Wall -std=gnu99
-CXXFLAGS	+= -Os -Wall
+CFLAGS		+= -O2 -Wall -std=gnu99
+CXXFLAGS	+= -O2 -Wall
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 

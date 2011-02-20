@@ -61,16 +61,34 @@ int isDir(const char* path)
 void md5(char md5[33], const char* str)
 {
 	unsigned char md5sum[16];
-
+	
 	md5_context ctx;
 	md5_starts(&ctx);
 	md5_update(&ctx, (unsigned char *)str, strlen(str));
 	md5_finish(&ctx, md5sum);
-
-	int i;
-	for(i = 0; i < 16; i++)
+	
+	for(int i = 0; i < 16; i++)
 	{
 		sprintf(md5 + i * 2, "%02x", md5sum[i]);
 	}
+}
+
+void supto(char* output, int maxlen, const char* str, int c)
+{
+	int len = strlen(str), i;
+	
+	for(i = 0; (i < len && i < maxlen); i++)
+	{
+		if(str[i] != c)
+		{
+			output[i] = str[i];
+		}
+		else
+		{
+			break;
+		}
+	}
+	
+	output[i] = '\0';
 }
 

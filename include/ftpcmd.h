@@ -7,8 +7,10 @@
 
 typedef void (*listcb)(Lv2FsDirent *entry);
 
+int recvline(int socket, char* str, int maxlen);
 int ssend(int socket, const char* str);
-int ssocket(int listener, const char ipaddr[16], int port);
+int slisten(int port);
+int sconnect(int *conn_s, const char* ipaddr, int port);
 void sclose(int *socket);
 int recvfile(int socket, const char filename[256], int bufsize, s64 startpos);
 int sendfile(int socket, const char filename[256], int bufsize, s64 startpos);
