@@ -174,7 +174,22 @@ static void handleclient(u64 conn_s_p)
 	
 	char buffer[1024];
 	
-	strcpy(cwd, "/"); // starting directory
+	// generate pasv output
+	char pasv_output[16];
+	netSocketInfo snf;
+	netGetSockInfo(conn_s, &snf, 1);
+	
+	srand(conn_s);
+	int p1 = (rand() % 251) + 4;
+	int p2 = rand() % 256;
+	
+	sprintf(pasv_output, "%u,%u,%u,%u,%i,%i",
+		(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
+		(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
+		p1, p2);
+	
+	// set working directory
+	strcpy(cwd, "/");
 	
 	// welcome message
 	ssend(conn_s, "220-OpenPS3FTP by @jjolano\r\n");
@@ -211,8 +226,9 @@ static void handleclient(u64 conn_s_p)
 				
 				if(isDir(tempcwd))
 				{
+					sprintf(buffer, "250 Directory change successful: %s\r\n", tempcwd);
+					ssend(conn_s, buffer);
 					strcpy(cwd, tempcwd);
-					ssend(conn_s, "250 CWD command successful\r\n");
 				}
 				else
 				{
@@ -222,7 +238,20 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "CDUP") == 0)
 			{
-
+				sprintf(buffer, "250 Directory change successful: %s\r\n", cwd);
+				ssend(conn_s, buffer);
+				
+				for(int i = strlen(cwd) - 2; i > 0; i--)
+				{
+					if(cwd[i] != '/')
+					{
+						cwd[i] = '\0';
+					}
+					else
+					{
+						break;
+					}
+				}
 			}
 			else
 			if(strcasecmp(cmd, "PASV") == 0)
@@ -231,56 +260,166 @@ static void handleclient(u64 conn_s_p)
 				
 				int data_ls = ssocket(1, NULL, FTPPORT);
 				
+				if(data_ls > 0)
+				{
+					sprintf(buffer, "227 Entering Passive Mode (%s)\r\n", pasv_output);
+					ssend(conn_s, buffer);
+					
+					data_s = accept(data_ls, NULL, NULL);
+					
+					sclose(&data_ls);
+					
+					if(data_s > 0)
+					{
+						dataactive = 1;
+					}
+					else
+					{
+						ssend(conn_s, "451 Data connection failed\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "451 Cannot create data socket\r\n");
+				}
 			}
 			else
 			if(strcasecmp(cmd, "PORT") == 0)
 			{
-				rest = 0;
+				char *param = strchr(buffer, ' ');
 				
-				
+				if(param != NULL)
+				{
+					rest = 0;
+					
+					char data[6][4];
+					char *splitstr = strtok(param + 1, ",");
+					
+					int i = 0;
+					while(i < 6 && splitstr != NULL)
+					{
+						strcpy(data[i++], splitstr);
+						splitstr = strtok(NULL, ",");
+					}
+					
+					if(i == 6)
+					{
+						char ipaddr[16];
+						sprintf(ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
+						
+						data_s = ssocket(0, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5])));
+						
+						if(data_s == 0)
+						{
+							ssend(conn_s, "200 PORT command successful\r\n");
+							dataactive = 1;
+						}
+						else
+						{
+							ssend(conn_s, "451 Data connection failed\r\n");
+						}
+					}
+					else
+					{
+						ssend(conn_s, "501 Insufficient connection info\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No connection info given\r\n");
+				}
 			}
 			else
 			if(strcasecmp(cmd, "LIST") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				char tempcwd[256];
-				strcpy(tempcwd, cwd);
-				
-				if(param != NULL)
+				if(data_s > 0)
 				{
-					absPath(tempcwd, param + 1, cwd);
-				}
-				
-				if(isDir(tempcwd))
-				{
+					char *param = strchr(buffer, ' ');
 					
+					char tempcwd[256];
+					strcpy(tempcwd, cwd);
+					
+					if(param != NULL)
+					{
+						if(strncmp(param + 1, "-a", 2) != 0) // gFTP compatibility
+						{
+							absPath(tempcwd, param + 1, cwd);
+						}
+					}
+					
+					if(isDir(tempcwd))
+					{
+						void listcb(Lv2FsDirent *entry)
+						{
+							char filename[256];
+							absPath(filename, entry->d_name, cwd);
+							
+							Lv2FsStat buf;
+							lv2FsStat(filename, &buf);
+							
+							char timebuf[16];
+							strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
+							
+							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %i %s %s\r\n",
+								((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
+								((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
+								((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
+								((buf.st_mode & S_IXUSR) != 0) ? "x" : "-",
+								((buf.st_mode & S_IRGRP) != 0) ? "r" : "-",
+								((buf.st_mode & S_IWGRP) != 0) ? "w" : "-",
+								((buf.st_mode & S_IXGRP) != 0) ? "x" : "-",
+								((buf.st_mode & S_IROTH) != 0) ? "r" : "-",
+								((buf.st_mode & S_IWOTH) != 0) ? "w" : "-",
+								((buf.st_mode & S_IXOTH) != 0) ? "x" : "-",
+								(int)buf.st_size, timebuf, entry->d_name);
+							
+							ssend(data_s, buffer);
+						}
+						
+						slist(tempcwd, listcb);
+					}
+					else
+					{
+						ssend(conn_s, "550 Cannot access directory\r\n");
+					}
 				}
 				else
 				{
-					ssend(conn_s, "550 Cannot access directory\r\n");
+					ssend(conn_s, "425 No data connection\r\n");
 				}
 			}
 			else
 			if(strcasecmp(cmd, "MLSD") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				char tempcwd[256];
-				strcpy(tempcwd, cwd);
-				
-				if(param != NULL)
+				if(data_s > 0)
 				{
-					absPath(tempcwd, param + 1, cwd);
-				}
-				
-				if(isDir(tempcwd))
-				{
+					char *param = strchr(buffer, ' ');
 					
+					char tempcwd[256];
+					strcpy(tempcwd, cwd);
+					
+					if(param != NULL)
+					{
+						absPath(tempcwd, param + 1, cwd);
+					}
+					
+					if(isDir(tempcwd))
+					{
+						void listcb(Lv2FsDirent *entry)
+						{
+							
+						}
+						
+						slist(tempcwd, listcb);
+					}
+					else
+					{
+						ssend(conn_s, "550 Cannot access directory\r\n");
+					}
 				}
 				else
 				{
-					ssend(conn_s, "550 Cannot access directory\r\n");
+					ssend(conn_s, "425 No data connection\r\n");
 				}
 			}
 			else
@@ -374,8 +513,9 @@ static void handleclient(u64 conn_s_p)
 				
 				if(param != NULL)
 				{
-					rest = atoi(param + 1);
 					ssend(conn_s, "350 REST command successful\r\n");
+					rest = atoi(param + 1);
+					dataactive = 1;
 				}
 				else
 				{
@@ -462,7 +602,7 @@ static void handleclient(u64 conn_s_p)
 				
 				if(param != NULL)
 				{
-					ssend(conn_s, "350 RNFR command successful\r\n");
+					ssend(conn_s, "350 RNFR accepted - ready for destination\r\n");
 					
 					if(recv(conn_s, buffer, 1023, 0) > 0)
 					{
@@ -627,23 +767,35 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "NLST") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				char tempcwd[256];
-				strcpy(tempcwd, cwd);
-				
-				if(param != NULL)
+				if(data_s > 0)
 				{
-					absPath(tempcwd, param + 1, cwd);
-				}
-				
-				if(isDir(tempcwd))
-				{
+					char *param = strchr(buffer, ' ');
 					
+					char tempcwd[256];
+					strcpy(tempcwd, cwd);
+					
+					if(param != NULL)
+					{
+						absPath(tempcwd, param + 1, cwd);
+					}
+					
+					if(isDir(tempcwd))
+					{
+						void listcb(Lv2FsDirent *entry)
+						{
+							
+						}
+						
+						slist(tempcwd, listcb);
+					}
+					else
+					{
+						ssend(conn_s, "550 Cannot access directory\r\n");
+					}
 				}
 				else
 				{
-					ssend(conn_s, "550 Cannot access directory\r\n");
+					ssend(conn_s, "425 No data connection\r\n");
 				}
 			}
 			else
@@ -661,7 +813,12 @@ static void handleclient(u64 conn_s_p)
 				
 				if(isDir(tempcwd))
 				{
+					void listcb(Lv2FsDirent *entry)
+					{
+						
+					}
 					
+					slist(tempcwd, listcb);
 				}
 				else
 				{
@@ -707,6 +864,27 @@ static void handleclient(u64 conn_s_p)
 			if(strcasecmp(cmd, "SIZE") == 0)
 			{
 				char *param = strchr(buffer, ' ');
+				
+				if(param != NULL)
+				{
+					char filename[256];
+					absPath(filename, param + 1, cwd);
+					
+					Lv2FsStat buf;
+					if(lv2FsStat(filename, &buf) == 0)
+					{
+						sprintf(buffer, "%i %i", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (int)buf.st_size);
+						ssend(conn_s, buffer);
+					}
+					else
+					{
+						ssend(conn_s, "550 File does not exist\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No file specified\r\n");
+				}
 			}
 			else
 			if(strcasecmp(cmd, "SYST") == 0)

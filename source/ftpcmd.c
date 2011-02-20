@@ -134,6 +134,31 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
 	return ret;
 }
 
+int slist(const char dir[256], void (*listcb)(Lv2FsDirent *entry))
+{
+	int count = 0;
+	Lv2FsFile fd;
+	
+	if(lv2FsOpenDir(dir, &fd) == 0)
+	{
+		Lv2FsDirent entry;
+		u64 read;
+		
+		while(lv2FsReadDir(fd, &entry, &read) == 0)
+		{
+			count++;
+			listcb(&entry);
+		}
+	}
+	else
+	{
+		count = -1;
+	}
+	
+	lv2FsCloseDir(fd);
+	return count;
+}
+
 /*
 void cmd_user(const char* param, int conn_s, char username[32])
 {
