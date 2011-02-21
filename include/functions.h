@@ -3,7 +3,7 @@
 #ifndef _openps3ftp_generalfunc_
 #define _openps3ftp_generalfunc_
 
-#define isempty(str) (str == '\0')
+#define isempty(str) (str[0] == '\0')
 
 void absPath(char* absPath, const char* path, const char* cwd);
 int exists(const char* path);

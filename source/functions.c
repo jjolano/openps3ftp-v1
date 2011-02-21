@@ -75,7 +75,19 @@ void md5(char md5[33], const char* str)
 
 int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 {
-	int len = strlen(str);
+	size_t ios = strcspn(str, " ");
+	int hs = (ios > 0 && ios <= lmaxlen);
+	strncpy(left, str, hs ? ios : lmaxlen);
+	
+	if(hs && (strlen(str + ios) + 1) != strlen(str))
+	{
+		strncpy(right, str + ios + 1, rmaxlen);
+		return 1;
+	}
+	
+	return 0;
+	
+/*	int len = strlen(str);
 	int ret = 0, l = 0, r = 0;
 	
 	for(int i = 0; i < len; i++)
@@ -84,7 +96,6 @@ int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 		{
 			if(str[i] == ' ')
 			{
-				left[l] = '\0';
 				ret = 1;
 			}
 			else
@@ -104,11 +115,9 @@ int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 		}
 	}
 	
-	if(ret == 1)
-	{
-		right[r] = '\0';
-	}
+	left[l] = '\0';
+	right[r] = '\0';
 	
-	return ret;
+	return ret;*/
 }
 

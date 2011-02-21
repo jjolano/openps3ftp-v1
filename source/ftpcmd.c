@@ -18,6 +18,7 @@
 #include <net/net.h>
 
 #include <malloc.h>
+#include <fcntl.h>
 
 #include "common.h"
 
@@ -25,21 +26,33 @@ int recvline(int socket, char* str, int maxlen)
 {
 	int i = 0;
 	char c;
+	ssize_t bytes;
 	
 	while(i < maxlen)
 	{
-		if(recv(socket, &c, 1, 0) == 1)
+		if((bytes = recv(socket, &c, 1, 0)) == 1)
 		{
-			str[i++] = c;
-
+			if(c == '\r')
+			{
+				continue;
+			}
 			if(c == '\n')
 			{
 				break;
 			}
+			
+			str[i++] = c;
 		}
 		else
 		{
-			return -1;
+			if(bytes == 0)
+			{
+				break;
+			}
+			else
+			{
+				return -1;
+			}
 		}
 	}
 	
@@ -67,22 +80,6 @@ int slisten(int port)
 	listen(list_s, 8);
 	
 	return list_s;
-}
-
-int sconnect(int *success, const char* ipaddr, int port)
-{
-	int conn_s = socket(AF_INET, SOCK_STREAM, 0);
-	
-	struct sockaddr_in sa;
-	memset(&sa, 0, sizeof(sa));
-	
-	sa.sin_family      = AF_INET;
-	sa.sin_port        = htons(port);
-	inet_pton(AF_INET, ipaddr, &sa.sin_addr);
-	
-	*success = connect(conn_s, (struct sockaddr *)&sa, sizeof(sa));
-	
-	return conn_s;
 }
 
 void sclose(int *socket)

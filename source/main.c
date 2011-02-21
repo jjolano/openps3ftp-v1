@@ -14,15 +14,8 @@
 //    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
 
 #define FTPPORT		21	// port to start ftp server on (21 is standard)
-#define BUFFER_SIZE	16384	// the default buffer size used in file transfers, in bytes
+#define BUFFER_SIZE	32768	// the default buffer size used in file transfers, in bytes
 #define DISABLE_PASS	0	// whether or not to disable the checking of the password (1 - yes, 0 - no)
-
-// tested buffer values (smaller buffer size allows for more connections): 
-// <= 4096 - doesn't even connect
-// == 8192 - works, but transfer speed is a little lesser compared to 16k or 32k
-// == 16384 - works great - similar to 32768
-// == 32768 - works great - similar to 16384
-// >= 65536 - POS, slowest transfer EVER.
 
 const char* VERSION = "1.4-dev";	// used in the welcome message and displayed on-screen
 
@@ -44,8 +37,8 @@ const char* VERSION = "1.4-dev";	// used in the welcome message and displayed on
 #include "sconsole.h"
 
 // default login details
-#define D_USER		"root"
-#define D_PASS_MD5	"ab5b3a8c09da585c175de3e137424ee0" // md5("openbox") = ab5b3a8c09da585c175de3e137424ee0
+const char* D_USER = "root";
+const char* D_PASS_MD5 = "ab5b3a8c09da585c175de3e137424ee0"; // md5("openbox")
 
 char pass_md5[33];
 char status[128];
@@ -180,6 +173,8 @@ static void handleclient(u64 conn_s_p)
 		char cmd[16], param[256];
 		int split = ssplit(buffer, cmd, 15, param, 255);
 		
+		sprintf(status, "cmd: %s param: %s split: %i", cmd, param, split);
+		
 		if(loggedin == 1)
 		{
 			// available commands when logged in
@@ -273,10 +268,15 @@ static void handleclient(u64 conn_s_p)
 						char ipaddr[16];
 						sprintf(ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
 						
-						int success = -1;
-						data_s = sconnect(&success, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5])));
+						data_s = socket(AF_INET, SOCK_STREAM, 0);
 						
-						if(success == 0)
+						struct sockaddr_in sa;
+						memset(&sa, 0, sizeof(sa));
+						sa.sin_family      = AF_INET;
+						sa.sin_port        = htons(((atoi(data[4]) * 256) + atoi(data[5])));
+						inet_pton(AF_INET, ipaddr, &sa.sin_addr);
+						
+						if(connect(data_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
 						{
 							ssend(conn_s, "200 PORT command successful\r\n");
 							dataactive = 1;
@@ -1034,10 +1034,15 @@ static void ipaddr_get(u64 unused)
 	
 	// connect to some server and add to the status message
 	
-	int success = -1;
-	int ip_s = sconnect(&success, "8.8.8.8", 53);
+	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
 	
-	if(success == 0)
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sin_family      = AF_INET;
+	sa.sin_port        = htons(53);
+	inet_pton(AF_INET, "8.8.8.8", &sa.sin_addr);
+	
+	if(connect(ip_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
 	{
 		netSocketInfo snf;
 		netGetSockInfo(ip_s, &snf, 1);
@@ -1065,7 +1070,7 @@ int main(int argc, const char* argv[])
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
 	// format version string
-	char version[16];
+	char version[32];
 	sprintf(version, "Version %s", VERSION);
 	
 	// check if dev_flash is mounted rw
