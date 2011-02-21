@@ -73,22 +73,44 @@ void md5(char md5[33], const char* str)
 	}
 }
 
-void supto(char* output, int maxlen, const char* str, int c)
+int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 {
-	int len = strlen(str), i;
+	int len = strlen(str);
+	int ret = 0, l = 0, r = 0;
 	
-	for(i = 0; (i < len && i < maxlen); i++)
+	for(int i = 0; i < len; i++)
 	{
-		if(str[i] != c)
+		if(ret == 0)
 		{
-			output[i] = str[i];
+			if(str[i] == ' ')
+			{
+				left[l] = '\0';
+				ret = 1;
+			}
+			else
+			{
+				if(l < lmaxlen)
+				{
+					left[l] = str[i];
+					l++;
+				}
+			}
 		}
 		else
 		{
-			break;
+			if(r < rmaxlen)
+			{
+				right[r] = str[i];
+				r++;
+			}
 		}
 	}
 	
-	output[i] = '\0';
+	if(ret == 1)
+	{
+		right[r] = '\0';
+	}
+	
+	return ret;
 }
 

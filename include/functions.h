@@ -11,6 +11,6 @@ int isDir(const char* path);
 
 //void stoupper(char *s);
 void md5(char md5[33], const char* str);
-void supto(char* output, int maxlen, const char* str, int c);
+int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen);
 
 #endif /* _openps3ftp_generalfunc_ */

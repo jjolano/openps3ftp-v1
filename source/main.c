@@ -177,29 +177,26 @@ static void handleclient(u64 conn_s_p)
 		buffer[strcspn(buffer, "\n")] = '\0';
 		buffer[strcspn(buffer, "\r")] = '\0';
 		
-		char cmd[32];
-		supto(cmd, 31, buffer, ' ');
+		char cmd[16], param[256];
+		int split = ssplit(buffer, cmd, 15, param, 255);
 		
 		if(loggedin == 1)
 		{
 			// available commands when logged in
 			if(strcasecmp(cmd, "CWD") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
 				char tempcwd[256];
 				strcpy(tempcwd, cwd);
 				
-				if(param != NULL)
+				if(split == 1)
 				{
-					absPath(tempcwd, param + 1, cwd);
+					absPath(tempcwd, param, cwd);
 				}
 				
 				if(isDir(tempcwd))
 				{
-					char temp[1024];
-					sprintf(temp, "250 Directory change successful: %s\r\n", tempcwd);
-					ssend(conn_s, temp);
+					sprintf(buffer, "250 Directory change successful: %s\r\n", tempcwd);
+					ssend(conn_s, buffer);
 					strcpy(cwd, tempcwd);
 				}
 				else
@@ -210,10 +207,6 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "CDUP") == 0)
 			{
-				char temp[1024];
-				sprintf(temp, "250 Directory change successful: %s\r\n", cwd);
-				ssend(conn_s, temp);
-				
 				for(int i = strlen(cwd) - 2; i > 0; i--)
 				{
 					if(cwd[i] != '/')
@@ -225,6 +218,9 @@ static void handleclient(u64 conn_s_p)
 						break;
 					}
 				}
+				
+				sprintf(buffer, "250 Directory change successful: %s\r\n", cwd);
+				ssend(conn_s, buffer);
 			}
 			else
 			if(strcasecmp(cmd, "PASV") == 0)
@@ -258,14 +254,12 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "PORT") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
 					rest = 0;
 					
 					char data[6][4];
-					char *splitstr = strtok(param + 1, ",");
+					char *splitstr = strtok(param, ",");
 					
 					int i = 0;
 					while(i < 6 && splitstr != NULL)
@@ -304,16 +298,14 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(data_s > 0)
 				{
-					char *param = strchr(buffer, ' ');
-					
 					char tempcwd[256];
 					strcpy(tempcwd, cwd);
 					
-					if(param != NULL)
+					if(split == 1)
 					{
 						if(strncmp(param + 1, "-a", 2) != 0) // gFTP compatibility
 						{
-							absPath(tempcwd, param + 1, cwd);
+							absPath(tempcwd, param, cwd);
 						}
 					}
 					
@@ -330,8 +322,7 @@ static void handleclient(u64 conn_s_p)
 							char timebuf[16];
 							strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
 							
-							char temp[1024];
-							sprintf(temp, "%s%s%s%s%s%s%s%s%s%s 1 root root %i %s %s\r\n",
+							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %i %s %s\r\n",
 								((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
 								((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 								((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
@@ -344,7 +335,7 @@ static void handleclient(u64 conn_s_p)
 								((buf.st_mode & S_IXOTH) != 0) ? "x" : "-",
 								(int)buf.st_size, timebuf, entry->d_name);
 							
-							ssend(data_s, temp);
+							ssend(data_s, buffer);
 						}
 						
 						ssend(conn_s, "150 Accepted data connection\r\n");
@@ -373,14 +364,12 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(data_s > 0)
 				{
-					char *param = strchr(buffer, ' ');
-					
 					char tempcwd[256];
 					strcpy(tempcwd, cwd);
 					
-					if(param != NULL)
+					if(split == 1)
 					{
-						absPath(tempcwd, param + 1, cwd);
+						absPath(tempcwd, param, cwd);
 					}
 					
 					if(isDir(tempcwd))
@@ -407,8 +396,7 @@ static void handleclient(u64 conn_s_p)
 								strcpy(dirtype, "p");
 							}
 							
-							char temp[1024];
-							sprintf(temp, "type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+							sprintf(buffer, "type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
 								dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
 								((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (int)buf.st_size, timebuf,
 								(((buf.st_mode & S_IRUSR) != 0) * 4 +
@@ -422,7 +410,7 @@ static void handleclient(u64 conn_s_p)
 								((buf.st_mode & S_IXOTH) != 0) * 1),
 								entry->d_name);
 							
-							ssend(data_s, temp);
+							ssend(data_s, buffer);
 						}
 						
 						ssend(conn_s, "150 Accepted data connection\r\n");
@@ -451,12 +439,10 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(data_s > 0)
 				{
-					char *param = strchr(buffer, ' ');
-					
-					if(param != NULL)
+					if(split == 1)
 					{
 						char filename[256];
-						absPath(filename, param + 1, cwd);
+						absPath(filename, param, cwd);
 						
 						ssend(conn_s, "150 Accepted data connection\r\n");
 						
@@ -484,12 +470,10 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(data_s > 0)
 				{
-					char *param = strchr(buffer, ' ');
-					
-					if(param != NULL)
+					if(split == 1)
 					{
 						char filename[256];
-						absPath(filename, param + 1, cwd);
+						absPath(filename, param, cwd);
 						
 						if(exists(filename) == 0)
 						{
@@ -522,9 +506,8 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "PWD") == 0)
 			{
-				char temp[1024];
-				sprintf(temp, "257 \"%s\" is the current directory\r\n", cwd);
-				ssend(conn_s, temp);
+				sprintf(buffer, "257 \"%s\" is the current directory\r\n", cwd);
+				ssend(conn_s, buffer);
 			}
 			else
 			if(strcasecmp(cmd, "TYPE") == 0)
@@ -534,12 +517,10 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "REST") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
 					ssend(conn_s, "350 REST command successful\r\n");
-					rest = atoi(param + 1);
+					rest = atoi(param);
 					dataactive = 1;
 				}
 				else
@@ -550,12 +531,10 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "DELE") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
 					char filename[256];
-					absPath(filename, param + 1, cwd);
+					absPath(filename, param, cwd);
 					
 					if(lv2FsUnlink(filename) == 0)
 					{
@@ -574,18 +553,15 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "MKD") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
 					char filename[256];
-					absPath(filename, param + 1, cwd);
+					absPath(filename, param, cwd);
 					
 					if(lv2FsMkdir(filename, 0755) == 0)
 					{
-						char temp[1024];
-						sprintf(temp, "257 \"%s\" was successfully created\r\n", param);
-						ssend(conn_s, temp);
+						sprintf(buffer, "257 \"%s\" was successfully created\r\n", param);
+						ssend(conn_s, buffer);
 					}
 					else
 					{
@@ -600,12 +576,10 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "RMD") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
 					char filename[256];
-					absPath(filename, param + 1, cwd);
+					absPath(filename, param, cwd);
 					
 					if(lv2FsRmdir(filename) == 0)
 					{
@@ -624,26 +598,22 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "RNFR") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
 					ssend(conn_s, "350 RNFR accepted - ready for destination\r\n");
 					
 					if(recvline(conn_s, buffer, 1023) > 0)
 					{
-						char cmd[32];
-						supto(cmd, 31, buffer, ' ');
+						char param2[256];
+						split = ssplit(buffer, cmd, 31, param2, 255);
 						
 						if(strcasecmp(cmd, "RNTO") == 0)
 						{
-							char *param2 = strchr(buffer, ' ');
-							
-							if(param2 != NULL)
+							if(split == 1)
 							{
 								char rnfr[256], rnto[256];
-								absPath(rnfr, param + 1, cwd);
-								absPath(rnto, param2 + 1, cwd);
+								absPath(rnfr, param, cwd);
+								absPath(rnto, param2, cwd);
 								
 								if(lv2FsRename(rnfr, rnto) == 0)
 								{
@@ -678,28 +648,24 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "SITE") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
-					char cmd[32];
-					supto(cmd, 31, param + 1, ' ');
+					char param2[256];
+					split = ssplit(param, cmd, 31, param2, 255);
 					
 					if(strcasecmp(cmd, "CHMOD") == 0)
 					{
-						char *param2 = strchr(param + 1, ' ');
-						
-						if(param2 != NULL)
+						if(split == 1)
 						{
-							char *filename = strchr(param2 + 1, ' ');
+							char temp[4], filename[256];
+							split = ssplit(param2, temp, 3, filename, 255);
 							
-							if(filename != NULL)
+							if(split == 1)
 							{
-								char perms[4], temp[4];
-								supto(temp, 3, param2 + 1, ' ');
+								char perms[4];
 								sprintf(perms, "0%s", temp);
 		
-								if(lv2FsChmod(filename + 1, S_IFMT | strtol(perms, NULL, 8)) == 0)
+								if(lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
 								{
 									ssend(conn_s, "250 File permissions successfully set\r\n");
 								}
@@ -730,12 +696,10 @@ static void handleclient(u64 conn_s_p)
 					else
 					if(strcasecmp(cmd, "PASSWD") == 0)
 					{
-						char *param2 = strchr(param + 1, ' ');
-						
-						if(param2 != NULL)
+						if(split == 1)
 						{
 							char md5pass[33];
-							md5(md5pass, param2 + 1);
+							md5(md5pass, param2);
 							
 							Lv2FsFile fd;
 							u64 written;
@@ -779,14 +743,12 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(data_s > 0)
 				{
-					char *param = strchr(buffer, ' ');
-					
 					char tempcwd[256];
 					strcpy(tempcwd, cwd);
 					
-					if(param != NULL)
+					if(split == 1)
 					{
-						absPath(tempcwd, param + 1, cwd);
+						absPath(tempcwd, param, cwd);
 					}
 					
 					if(isDir(tempcwd))
@@ -820,14 +782,12 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "MLST") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
 				char tempcwd[256];
 				strcpy(tempcwd, cwd);
 				
-				if(param != NULL)
+				if(split == 1)
 				{
-					absPath(tempcwd, param + 1, cwd);
+					absPath(tempcwd, param, cwd);
 				}
 				
 				if(isDir(tempcwd))
@@ -854,8 +814,7 @@ static void handleclient(u64 conn_s_p)
 							strcpy(dirtype, "p");
 						}
 						
-						char temp[1024];
-						sprintf(temp, " type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+						sprintf(buffer, " type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
 							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
 							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (int)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
@@ -869,7 +828,7 @@ static void handleclient(u64 conn_s_p)
 							((buf.st_mode & S_IXOTH) != 0) * 1),
 							entry->d_name);
 						
-						ssend(conn_s, temp);
+						ssend(conn_s, buffer);
 					}
 					
 					ssend(conn_s, "250-Directory Listing\r\n");
@@ -919,19 +878,16 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "SIZE") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
 					char filename[256];
-					absPath(filename, param + 1, cwd);
+					absPath(filename, param, cwd);
 					
 					Lv2FsStat buf;
 					if(lv2FsStat(filename, &buf) == 0)
 					{
-						char temp[256];
-						sprintf(temp, "%i %i", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (int)buf.st_size);
-						ssend(conn_s, temp);
+						sprintf(buffer, "%i %i", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (int)buf.st_size);
+						ssend(conn_s, buffer);
 					}
 					else
 					{
@@ -972,29 +928,24 @@ static void handleclient(u64 conn_s_p)
 			// available commands when not logged in
 			if(strcasecmp(cmd, "USER") == 0)
 			{
-				char *param = strchr(buffer, ' ');
-				
-				if(param != NULL)
+				if(split == 1)
 				{
-					char temp[1024];
-					sprintf(temp, "331 User %s OK. Password required\r\n", param);
-					ssend(conn_s, temp);
+					sprintf(buffer, "331 User %s OK. Password required\r\n", param);
+					ssend(conn_s, buffer);
 					
 					if(recvline(conn_s, buffer, 1023) > 0)
 					{
-						char cmd[32];
-						supto(cmd, 31, buffer, ' ');
+						char param2[256];
+						split = ssplit(buffer, cmd, 31, param2, 255);
 						
 						if(strcasecmp(cmd, "PASS") == 0)
 						{
-							char *param2 = strchr(buffer, ' ');
-							
-							if(param2 != NULL)
+							if(split == 1)
 							{
 								char userpass_md5[33];
-								md5(userpass_md5, param2 + 1);
+								md5(userpass_md5, param2);
 								
-								if((strcmp(D_USER, param + 1) == 0 && strcmp(D_PASS_MD5, userpass_md5) == 0) || DISABLE_PASS)
+								if((strcmp(D_USER, param) == 0 && strcmp(D_PASS_MD5, userpass_md5) == 0) || DISABLE_PASS)
 								{
 									ssend(conn_s, "230 Welcome to OpenPS3FTP\r\n");
 									loggedin = 1;

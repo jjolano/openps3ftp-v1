@@ -28,16 +28,18 @@ int recvline(int socket, char* str, int maxlen)
 	
 	while(i < maxlen)
 	{
-		if(recv(socket, &c, 1, 0) == -1)
+		if(recv(socket, &c, 1, 0) == 1)
+		{
+			str[i++] = c;
+
+			if(c == '\n')
+			{
+				break;
+			}
+		}
+		else
 		{
 			return -1;
-		}
-		
-		str[i++] = c;
-
-		if(c == '\n')
-		{
-			break;
 		}
 	}
 	
