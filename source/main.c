@@ -273,7 +273,10 @@ static void handleclient(u64 conn_s_p)
 						char ipaddr[16];
 						sprintf(ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
 						
-						if(sconnect(&data_s, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5]))) == 0)
+						int success = -1;
+						data_s = sconnect(&success, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5])));
+						
+						if(success == 0)
 						{
 							ssend(conn_s, "200 PORT command successful\r\n");
 							dataactive = 1;
@@ -1029,12 +1032,16 @@ static void ipaddr_get(u64 unused)
 	
 	sys_ppu_thread_yield();
 	
-	int ip_s;
-	netSocketInfo snf;
-	
 	// connect to some server and add to the status message
-	if(sconnect(&ip_s, "8.8.8.8", 53) == 0 && netGetSockInfo(ip_s, &snf, 1) == 0)
+	
+	int success = -1;
+	int ip_s = sconnect(&success, "8.8.8.8", 53);
+	
+	if(success == 0)
 	{
+		netSocketInfo snf;
+		netGetSockInfo(ip_s, &snf, 1);
+		
 		sprintf(status, "%s (IP: %u.%u.%u.%u Port: %i)", status,
 			(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
 			(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),

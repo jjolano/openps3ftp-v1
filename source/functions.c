@@ -91,8 +91,7 @@ int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 			{
 				if(l < lmaxlen)
 				{
-					left[l] = str[i];
-					l++;
+					left[l++] = str[i];
 				}
 			}
 		}
@@ -100,8 +99,7 @@ int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 		{
 			if(r < rmaxlen)
 			{
-				right[r] = str[i];
-				r++;
+				right[r++] = str[i];
 			}
 		}
 	}

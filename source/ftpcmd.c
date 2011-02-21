@@ -69,9 +69,9 @@ int slisten(int port)
 	return list_s;
 }
 
-int sconnect(int *conn_s, const char* ipaddr, int port)
+int sconnect(int *success, const char* ipaddr, int port)
 {
-	*conn_s = socket(AF_INET, SOCK_STREAM, 0);
+	int conn_s = socket(AF_INET, SOCK_STREAM, 0);
 	
 	struct sockaddr_in sa;
 	memset(&sa, 0, sizeof(sa));
@@ -80,7 +80,9 @@ int sconnect(int *conn_s, const char* ipaddr, int port)
 	sa.sin_port        = htons(port);
 	inet_pton(AF_INET, ipaddr, &sa.sin_addr);
 	
-	return connect(*conn_s, (struct sockaddr *)&sa, sizeof(sa));
+	*success = connect(conn_s, (struct sockaddr *)&sa, sizeof(sa));
+	
+	return conn_s;
 }
 
 void sclose(int *socket)
