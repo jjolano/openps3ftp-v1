@@ -37,8 +37,8 @@ const char* VERSION = "1.4-dev";	// used in the welcome message and displayed on
 #include "sconsole.h"
 
 // default login details
-const char* D_USER = "root";
-const char* D_PASS = "openbox";
+#define D_USER "root"
+#define D_PASS "openbox"
 
 char userpass[32];
 char status[128];
@@ -168,6 +168,9 @@ static void handleclient(u64 conn_s_p)
 	int connactive = 1; // whether the ftp connection is active or not
 	int dataactive = 0; // prevent the data connection from being closed at the end of the loop
 	int loggedin = 0; // whether the user is logged in or not
+	
+	char user[32]; // stores the username that the user entered
+	char rnfr[256]; // stores the path/to/file for the RNFR command
 	
 	char cwd[256]; // Current Working Directory
 	int rest = 0; // for resuming file transfers
@@ -625,44 +628,37 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(split == 1)
 				{
-					ssend(conn_s, "350 RNFR accepted - ready for destination\r\n");
+					absPath(rnfr, param, cwd);
 					
-					if(recv(conn_s, buffer, 1023, 0) > 0)
+					if(exists(rnfr) == 0)
 					{
-						char param2[256];
-						split = ssplit(buffer, cmd, 31, param2, 255);
-						
-						if(strcasecmp(cmd, "RNTO") == 0)
-						{
-							if(split == 1)
-							{
-								char rnfr[256], rnto[256];
-								absPath(rnfr, param, cwd);
-								absPath(rnto, param2, cwd);
-								
-								if(lv2FsRename(rnfr, rnto) == 0)
-								{
-									ssend(conn_s, "250 File was successfully renamed or moved\r\n");
-								}
-								else
-								{
-									ssend(conn_s, "550 Cannot rename or move file\r\n");
-								}
-							}
-							else
-							{
-								ssend(conn_s, "501 No file specified\r\n");
-							}
-						}
-						else
-						{
-							ssend(conn_s, "503 Bad command sequence\r\n");
-						}
+						ssend(conn_s, "350 RNFR accepted - ready for destination\r\n");
 					}
 					else
 					{
-						// error in recv, disconnect
-						connactive = 0;
+						ssend(conn_s, "550 RNFR failed - file does not exist\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No file specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "RNTO") == 0)
+			{
+				if(split == 1)
+				{
+					char rnto[256];
+					absPath(rnto, param, cwd);
+					
+					if(lv2FsRename(rnfr, rnto) == 0)
+					{
+						ssend(conn_s, "250 File was successfully renamed or moved\r\n");
+					}
+					else
+					{
+						ssend(conn_s, "550 Cannot rename or move file\r\n");
 					}
 				}
 				else
@@ -728,8 +724,9 @@ static void handleclient(u64 conn_s_p)
 							
 							if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0) == 0)
 							{
-								lv2FsWrite(fd, param2, strlen(param2), &written);
-								ssend(conn_s, "200 FTP password successfully changed\r\n");
+								lv2FsWrite(fd, param2, 31, &written);
+								sprintf(buffer, "200 New password: %s\r\n", param2);
+								ssend(conn_s, buffer);
 							}
 							else
 							{
@@ -942,47 +939,33 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(split == 1)
 				{
+					strcpy(user, param);
 					sprintf(buffer, "331 User %s OK. Password required\r\n", param);
 					ssend(conn_s, buffer);
-					
-					if(recv(conn_s, buffer, 1023, 0) > 0)
-					{
-						char param2[256];
-						split = ssplit(buffer, cmd, 31, param2, 255);
-						
-						if(strcasecmp(cmd, "PASS") == 0)
-						{
-							if(split == 1)
-							{
-								if((strcmp(D_USER, param) + strcmp(D_PASS, param2)) == 0 || DISABLE_PASS)
-								{
-									ssend(conn_s, "230 Welcome to OpenPS3FTP!\r\n");
-									loggedin = 1;
-								}
-								else
-								{
-									ssend(conn_s, "430 Invalid username or password\r\n");
-								}
-							}
-							else
-							{
-								ssend(conn_s, "501 No password given\r\n");
-							}
-						}
-						else
-						{
-							ssend(conn_s, "503 Bad command sequence\r\n");
-						}
-					}
-					else
-					{
-						// error in recv, disconnect
-						connactive = 0;
-					}
 				}
 				else
 				{
 					ssend(conn_s, "501 No user specified\r\n");
+				}
+			}
+			else
+			if(strcasecmp(cmd, "PASS") == 0)
+			{
+				if(split == 1)
+				{
+					if(DISABLE_PASS || (strcmp(D_USER, user) == 0 && strcmp(userpass, param) == 0))
+					{
+						ssend(conn_s, "230 Welcome to OpenPS3FTP!\r\n");
+						loggedin = 1;
+					}
+					else
+					{
+						ssend(conn_s, "430 Invalid username or password\r\n");
+					}
+				}
+				else
+				{
+					ssend(conn_s, "501 No password given\r\n");
 				}
 			}
 			else
@@ -1022,7 +1005,7 @@ static void handleconnections(u64 unused)
 		{
 			if((conn_s = accept(list_s, NULL, NULL)) > 0)
 			{
-				sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, (BUFFER_SIZE * 2), 0, "ClientCmdHandler");
+				sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x1000 + BUFFER_SIZE, 0, "ClientCmdHandler");
 				
 				usleep(100000); // this should solve some connection issues
 			}
@@ -1066,9 +1049,8 @@ int main(int argc, const char* argv[])
 	// initialize libnet
 	netInitialize();
 	
-	sys_ppu_thread_t id;
-	
 	// start listening for connections
+	sys_ppu_thread_t id;
 	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
 	
 	// print stuff to the screen
