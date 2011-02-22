@@ -49,7 +49,7 @@ void sclose(int *socket)
 	if(*socket != -1)
 	{
 		shutdown(*socket, SHUT_RDWR);
-		closesocket(*socket);
+		close(*socket);
 		*socket = -1;
 	}
 }

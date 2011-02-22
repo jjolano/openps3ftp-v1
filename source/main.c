@@ -133,26 +133,32 @@ void eventHandler(u64 status, u64 param, void * userdata)
 static void ipaddr_get(u64 unused)
 {
 	// connect to some server and add to the status message
-	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
-	
 	struct sockaddr_in sa;
 	memset(&sa, 0, sizeof(sa));
-	sa.sin_family      = AF_INET;
-	sa.sin_port        = htons(53);
+	sa.sin_len	= sizeof(sa);
+	sa.sin_family	= AF_INET;
+	sa.sin_port	= htons(53);
 	inet_pton(AF_INET, "8.8.8.8", &sa.sin_addr);
+	
+	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
 	
 	if(connect(ip_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
 	{
 		struct sockaddr_in ssa;
 		socklen_t len = sizeof(ssa);
 		
-		getsockname(ip_s, (struct sockaddr *)&ssa, &len);
-		
-		sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(ssa.sin_addr), FTPPORT);
+		if(getsockname(ip_s, (struct sockaddr *)&ssa, &len) == 0)
+		{
+			sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(ssa.sin_addr), FTPPORT);
+		}
+		else
+		{
+			strcat(status, " - IP Address Retrieval Failed");
+		}
 	}
 	else
 	{
-		strcat(status, " - IP Address Retrieval Failed");
+		strcat(status, " - No Internet Connection");
 	}
 	
 	sclose(&ip_s);
@@ -178,21 +184,19 @@ static void handleclient(u64 conn_s_p)
 	char buffer[1024];
 	
 	// generate pasv output
+	srand(conn_s);
+	int p1 = (rand() % 251) + 4;
+	int p2 = rand() % 256;
+	
 	struct sockaddr_in ssa;
 	socklen_t len = sizeof(ssa);
 	
 	getsockname(conn_s, (struct sockaddr *)&ssa, &len);
 	
-	srand(conn_s);
-	int p1 = (rand() % 251) + 4;
-	int p2 = rand() % 256;
-	
 	char pasv_output[64];
 	sprintf(pasv_output, "227 Entering Passive Mode (%s,%i,%i)\r\n", inet_ntoa(ssa.sin_addr), p1, p2);
 	
-	int pasv_output_len = strlen(pasv_output);
-	
-	for(int i = 27; i < pasv_output_len; i++)
+	for(int i = 27; i < 43; i++)
 	{
 		if(pasv_output[i] == '.')
 		{
@@ -314,8 +318,9 @@ static void handleclient(u64 conn_s_p)
 						
 						struct sockaddr_in sa;
 						memset(&sa, 0, sizeof(sa));
-						sa.sin_family      = AF_INET;
-						sa.sin_port        = htons(((atoi(data[4]) * 256) + atoi(data[5])));
+						sa.sin_len	= sizeof(sa);
+						sa.sin_family	= AF_INET;
+						sa.sin_port	= htons(((atoi(data[4]) * 256) + atoi(data[5])));
 						inet_pton(AF_INET, ipaddr, &sa.sin_addr);
 						
 						if(connect(data_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
@@ -363,7 +368,7 @@ static void handleclient(u64 conn_s_p)
 						strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
 						
 						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %llu %s %s\r\n",
-							((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
+							(entry->d_type == 1) ? "d" : "-", 
 							((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 							((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
 							((buf.st_mode & S_IXUSR) != 0) ? "x" : "-",
@@ -430,8 +435,8 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
-							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+							dirtype, (entry->d_type == 1) ? "dir" : "file",
+							(entry->d_type == 1) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
 							((buf.st_mode & S_IWUSR) != 0) * 2 +
 							((buf.st_mode & S_IXUSR) != 0) * 1),
@@ -829,8 +834,8 @@ static void handleclient(u64 conn_s_p)
 					}
 					
 					sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-						dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
-						((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+						dirtype, (entry->d_type == 1) ? "dir" : "file",
+						(entry->d_type == 1) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 						(((buf.st_mode & S_IRUSR) != 0) * 4 +
 						((buf.st_mode & S_IWUSR) != 0) * 2 +
 						((buf.st_mode & S_IXUSR) != 0) * 1),
