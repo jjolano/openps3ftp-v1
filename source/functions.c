@@ -78,8 +78,6 @@ int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 	size_t ios = strcspn(str, " ");
 	int ret = (ios < strlen(str));
 	
-	printf("ios: %i strlen: %i ret: %i\n", ios, strlen(str), ret);
-	
 	strncpy(left, str, (ios < lmaxlen) ? ios : lmaxlen);
 	left[ios] = '\0';
 	

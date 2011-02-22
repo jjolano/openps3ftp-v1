@@ -22,44 +22,6 @@
 
 #include "common.h"
 
-int recvline(int socket, char* str, int maxlen)
-{
-	int i = 0;
-	char c;
-	ssize_t bytes;
-	
-	while(i < maxlen)
-	{
-		if((bytes = recv(socket, &c, 1, 0)) == 1)
-		{
-			if(c == '\r')
-			{
-				continue;
-			}
-			if(c == '\n')
-			{
-				break;
-			}
-			
-			str[i++] = c;
-		}
-		else
-		{
-			if(bytes == 0)
-			{
-				break;
-			}
-			else
-			{
-				return -1;
-			}
-		}
-	}
-	
-	str[i] = '\0';
-	return i;
-}
-
 int ssend(int socket, const char* str)
 {
 	return send(socket, str, strlen(str), 0);
@@ -170,7 +132,7 @@ int slist(const char dir[256], void (*listcb)(Lv2FsDirent *entry))
 		Lv2FsDirent entry;
 		u64 read;
 		
-		while(lv2FsReadDir(fd, &entry, &read) == 0)
+		while(lv2FsReadDir(fd, &entry, &read) == 0 && read > 0)
 		{
 			count++;
 			listcb(&entry);

@@ -164,7 +164,7 @@ static void handleclient(u64 conn_s_p)
 	sprintf(buffer, "220 Version %s\r\n", VERSION);
 	ssend(conn_s, buffer);
 	
-	while(exitapp == 0 && connactive == 1 && recvline(conn_s, buffer, 1023) > 0)
+	while(exitapp == 0 && connactive == 1 && recv(conn_s, buffer, 1023, 0) > 0 && net_errno == 0)
 	{
 		// get rid of the newline at the end of the string
 		buffer[strcspn(buffer, "\n")] = '\0';
@@ -605,7 +605,7 @@ static void handleclient(u64 conn_s_p)
 				{
 					ssend(conn_s, "350 RNFR accepted - ready for destination\r\n");
 					
-					if(recvline(conn_s, buffer, 1023) > 0)
+					if(recv(conn_s, buffer, 1023, 0) > 0 && net_errno == 0)
 					{
 						char param2[256];
 						split = ssplit(buffer, cmd, 31, param2, 255);
@@ -936,7 +936,7 @@ static void handleclient(u64 conn_s_p)
 					sprintf(buffer, "331 User %s OK. Password required\r\n", param);
 					ssend(conn_s, buffer);
 					
-					if(recvline(conn_s, buffer, 1023) > 0)
+					if(recv(conn_s, buffer, 1023, 0) > 0 && net_errno == 0)
 					{
 						char param2[256];
 						split = ssplit(buffer, cmd, 31, param2, 255);
@@ -1009,6 +1009,9 @@ static void handleconnections(u64 unused)
 		
 		strcpy(status, "Status: Listening for connections");
 		
+		// try to get the ip address
+		sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "GetIPAddress");
+		
 		while(exitapp == 0)
 		{
 			if((conn_s = accept(list_s, NULL, NULL)) > 0)
@@ -1025,7 +1028,7 @@ static void handleconnections(u64 unused)
 	sys_ppu_thread_exit(0);
 }
 
-static void ipaddr_get(u64 unused)
+static void ipaddr_get(u64 ip_s_p)
 {
 	// temporary method until something new comes up
 	// will work only if internet connection is available
@@ -1033,7 +1036,6 @@ static void ipaddr_get(u64 unused)
 	sys_ppu_thread_yield();
 	
 	// connect to some server and add to the status message
-	
 	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
 	
 	struct sockaddr_in sa;
@@ -1103,9 +1105,6 @@ int main(int argc, const char* argv[])
 	
 	// start listening for connections
 	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
-	
-	// try to get the ip address
-	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "GetIPAddress");
 	
 	// print stuff to the screen
 	int x, y;
