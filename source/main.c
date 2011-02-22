@@ -38,9 +38,9 @@ const char* VERSION = "1.4-dev";	// used in the welcome message and displayed on
 
 // default login details
 const char* D_USER = "root";
-const char* D_PASS_MD5 = "ab5b3a8c09da585c175de3e137424ee0"; // md5("openbox")
+const char* D_PASS = "openbox";
 
-char pass_md5[33];
+char userpass[32];
 char status[128];
 
 int exitapp = 0;
@@ -128,13 +128,10 @@ void eventHandler(u64 status, u64 param, void * userdata)
 	}
 }
 
+// temporary method until something new comes up
+// will work only if internet connection is available
 static void ipaddr_get(u64 unused)
 {
-	// temporary method until something new comes up
-	// will work only if internet connection is available
-	
-	sys_ppu_thread_yield();
-	
 	// connect to some server and add to the status message
 	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
 	
@@ -146,15 +143,12 @@ static void ipaddr_get(u64 unused)
 	
 	if(connect(ip_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
 	{
-		netSocketInfo snf;
-		netGetSockInfo(ip_s, &snf, 1);
+		struct sockaddr_in ssa;
+		socklen_t len = sizeof(ssa);
 		
-		/*sprintf(status, "%s (IP: %u.%u.%u.%u Port: %i)", status,
-			(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
-			(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
-			FTPPORT);*/
+		getsockname(ip_s, (struct sockaddr *)&ssa, &len);
 		
-		sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(snf.local_adr), FTPPORT);
+		sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(ssa.sin_addr), FTPPORT);
 	}
 	else
 	{
@@ -181,18 +175,27 @@ static void handleclient(u64 conn_s_p)
 	char buffer[1024];
 	
 	// generate pasv output
-	netSocketInfo snf;
-	netGetSockInfo(conn_s, &snf, 1);
+	struct sockaddr_in ssa;
+	socklen_t len = sizeof(ssa);
+	
+	getsockname(conn_s, (struct sockaddr *)&ssa, &len);
 	
 	srand(conn_s);
 	int p1 = (rand() % 251) + 4;
 	int p2 = rand() % 256;
 	
 	char pasv_output[64];
-	sprintf(pasv_output, "227 Entering Passive Mode (%u,%u,%u,%u,%i,%i)\r\n",
-		(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
-		(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
-		p1, p2);
+	sprintf(pasv_output, "227 Entering Passive Mode (%s,%i,%i)\r\n", inet_ntoa(ssa.sin_addr), p1, p2);
+	
+	int pasv_output_len = strlen(pasv_output);
+	
+	for(int i = 27; i < pasv_output_len; i++)
+	{
+		if(pasv_output[i] == '.')
+		{
+			pasv_output[i] = ',';
+		}
+	}
 	
 	// set working directory
 	strcpy(cwd, "/");
@@ -202,7 +205,7 @@ static void handleclient(u64 conn_s_p)
 	sprintf(buffer, "220 Version %s\r\n", VERSION);
 	ssend(conn_s, buffer);
 	
-	while(exitapp == 0 && connactive == 1 && recv(conn_s, buffer, 1023, 0) > 0 && net_errno == 0)
+	while(exitapp == 0 && connactive == 1 && recv(conn_s, buffer, 1023, 0) > 0)
 	{
 		// get rid of the newline at the end of the string
 		buffer[strcspn(buffer, "\n")] = '\0';
@@ -210,8 +213,6 @@ static void handleclient(u64 conn_s_p)
 		
 		char cmd[16], param[256];
 		int split = ssplit(buffer, cmd, 15, param, 255);
-		
-		sprintf(status, "cmd: %s param: %s split: %i", cmd, param, split);
 		
 		if(loggedin == 1)
 		{
@@ -626,7 +627,7 @@ static void handleclient(u64 conn_s_p)
 				{
 					ssend(conn_s, "350 RNFR accepted - ready for destination\r\n");
 					
-					if(recv(conn_s, buffer, 1023, 0) > 0 && net_errno == 0)
+					if(recv(conn_s, buffer, 1023, 0) > 0)
 					{
 						char param2[256];
 						split = ssplit(buffer, cmd, 31, param2, 255);
@@ -722,15 +723,12 @@ static void handleclient(u64 conn_s_p)
 					{
 						if(split == 1)
 						{
-							char md5pass[33];
-							md5(md5pass, param2);
-							
 							Lv2FsFile fd;
 							u64 written;
 							
 							if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0) == 0)
 							{
-								lv2FsWrite(fd, md5pass, 32, &written);
+								lv2FsWrite(fd, param2, strlen(param2), &written);
 								ssend(conn_s, "200 FTP password successfully changed\r\n");
 							}
 							else
@@ -750,6 +748,10 @@ static void handleclient(u64 conn_s_p)
 					{
 						ssend(conn_s, "221 Exiting OpenPS3FTP\r\n");
 						exitapp = 1;
+					}
+					else
+					{
+						ssend(conn_s, "500 Unknown SITE command\r\n");
 					}
 				}
 				else
@@ -943,7 +945,7 @@ static void handleclient(u64 conn_s_p)
 					sprintf(buffer, "331 User %s OK. Password required\r\n", param);
 					ssend(conn_s, buffer);
 					
-					if(recv(conn_s, buffer, 1023, 0) > 0 && net_errno == 0)
+					if(recv(conn_s, buffer, 1023, 0) > 0)
 					{
 						char param2[256];
 						split = ssplit(buffer, cmd, 31, param2, 255);
@@ -952,12 +954,9 @@ static void handleclient(u64 conn_s_p)
 						{
 							if(split == 1)
 							{
-								char userpass_md5[33];
-								md5(userpass_md5, param2);
-								
-								if((strcmp(D_USER, param) == 0 && strcmp(D_PASS_MD5, userpass_md5) == 0) || DISABLE_PASS)
+								if((strcmp(D_USER, param) + strcmp(D_PASS, param2)) == 0 || DISABLE_PASS)
 								{
-									ssend(conn_s, "230 Welcome to OpenPS3FTP\r\n");
+									ssend(conn_s, "230 Welcome to OpenPS3FTP!\r\n");
 									loggedin = 1;
 								}
 								else
@@ -1047,21 +1046,18 @@ int main(int argc, const char* argv[])
 	// check if dev_flash is mounted rw
 	int rwflashmount = (exists("/dev_blind") == 0 || exists("/dev_rwflash") == 0 || exists("/dev_fflash") == 0 || exists("/dev_Alejandro") == 0);
 	
+	// load default password
+	strcpy(userpass, D_PASS);
+	
 	// load password file
 	Lv2FsFile fd;
 	if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0) == 0)
 	{
 		u64 read;
-		lv2FsRead(fd, pass_md5, 32, &read);
+		lv2FsRead(fd, userpass, 31, &read);
 	}
 	
 	lv2FsClose(fd);
-	
-	// use default password if the loaded one is invalid
-	if(strlen(pass_md5) != 32)
-	{
-		strcpy(pass_md5, D_PASS_MD5);
-	}
 	
 	// prepare for screen printing
 	init_screen();

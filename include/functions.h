@@ -10,7 +10,6 @@ int exists(const char* path);
 int isDir(const char* path);
 
 //void stoupper(char *s);
-void md5(char md5[33], const char* str);
 int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen);
 
 #endif /* _openps3ftp_generalfunc_ */

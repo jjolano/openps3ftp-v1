@@ -18,7 +18,6 @@
 #include <psl1ght/lv2/filesystem.h>
 
 #include "common.h"
-#include "md5.h"
 
 void absPath(char* absPath, const char* path, const char* cwd)
 {
@@ -57,21 +56,6 @@ int isDir(const char* path)
 	do if (96 == (224 & *s)) *s &= 223;
 	while (*s++);
 }*/
-
-void md5(char md5[33], const char* str)
-{
-	unsigned char md5sum[16];
-	
-	md5_context ctx;
-	md5_starts(&ctx);
-	md5_update(&ctx, (unsigned char *)str, strlen(str));
-	md5_finish(&ctx, md5sum);
-	
-	for(int i = 0; i < 16; i++)
-	{
-		sprintf(md5 + i * 2, "%02x", md5sum[i]);
-	}
-}
 
 int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 {
