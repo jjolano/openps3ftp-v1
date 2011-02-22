@@ -325,7 +325,7 @@ static void handleclient(u64 conn_s_p)
 							char timebuf[16];
 							strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
 							
-							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %i %s %s\r\n",
+							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %llu %s %s\r\n",
 								((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
 								((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 								((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
@@ -336,7 +336,7 @@ static void handleclient(u64 conn_s_p)
 								((buf.st_mode & S_IROTH) != 0) ? "r" : "-",
 								((buf.st_mode & S_IWOTH) != 0) ? "w" : "-",
 								((buf.st_mode & S_IXOTH) != 0) ? "x" : "-",
-								(int)buf.st_size, timebuf, entry->d_name);
+								(unsigned long long)buf.st_size, timebuf, entry->d_name);
 							
 							ssend(data_s, buffer);
 						}
@@ -399,9 +399,9 @@ static void handleclient(u64 conn_s_p)
 								strcpy(dirtype, "p");
 							}
 							
-							sprintf(buffer, "type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+							sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
 								dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
-								((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (int)buf.st_size, timebuf,
+								((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 								(((buf.st_mode & S_IRUSR) != 0) * 4 +
 								((buf.st_mode & S_IWUSR) != 0) * 2 +
 								((buf.st_mode & S_IXUSR) != 0) * 1),
@@ -817,9 +817,9 @@ static void handleclient(u64 conn_s_p)
 							strcpy(dirtype, "p");
 						}
 						
-						sprintf(buffer, " type=%s%s;siz%s=%i;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+						sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
 							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
-							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (int)buf.st_size, timebuf,
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
 							((buf.st_mode & S_IWUSR) != 0) * 2 +
 							((buf.st_mode & S_IXUSR) != 0) * 1),
@@ -889,7 +889,7 @@ static void handleclient(u64 conn_s_p)
 					Lv2FsStat buf;
 					if(lv2FsStat(filename, &buf) == 0)
 					{
-						sprintf(buffer, "%i %i", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (int)buf.st_size);
+						sprintf(buffer, "%i %llu", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (unsigned long long)buf.st_size);
 						ssend(conn_s, buffer);
 					}
 					else
@@ -1047,12 +1047,12 @@ static void ipaddr_get(u64 unused)
 		netSocketInfo snf;
 		netGetSockInfo(ip_s, &snf, 1);
 		
-		sprintf(status, "%s (IP: %u.%u.%u.%u Port: %i)", status,
+		/*sprintf(status, "%s (IP: %u.%u.%u.%u Port: %i)", status,
 			(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
 			(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
-			FTPPORT);
+			FTPPORT);*/
 		
-		//sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(snf.remote_adr), FTPPORT);
+		sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(snf.local_adr), FTPPORT);
 	}
 	else
 	{
