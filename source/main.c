@@ -128,6 +128,44 @@ void eventHandler(u64 status, u64 param, void * userdata)
 	}
 }
 
+static void ipaddr_get(u64 unused)
+{
+	// temporary method until something new comes up
+	// will work only if internet connection is available
+	
+	sys_ppu_thread_yield();
+	
+	// connect to some server and add to the status message
+	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
+	
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sin_family      = AF_INET;
+	sa.sin_port        = htons(53);
+	inet_pton(AF_INET, "8.8.8.8", &sa.sin_addr);
+	
+	if(connect(ip_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
+	{
+		netSocketInfo snf;
+		netGetSockInfo(ip_s, &snf, 1);
+		
+		/*sprintf(status, "%s (IP: %u.%u.%u.%u Port: %i)", status,
+			(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
+			(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
+			FTPPORT);*/
+		
+		sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(snf.local_adr), FTPPORT);
+	}
+	else
+	{
+		strcat(status, " - IP Address Retrieval Failed");
+	}
+	
+	sclose(&ip_s);
+	
+	sys_ppu_thread_exit(0);
+}
+
 static void handleclient(u64 conn_s_p)
 {
 	int conn_s = (int)conn_s_p; // main communications socket
@@ -306,51 +344,41 @@ static void handleclient(u64 conn_s_p)
 					
 					if(split == 1)
 					{
-						if(strncmp(param + 1, "-a", 2) != 0) // gFTP compatibility
-						{
-							absPath(tempcwd, param, cwd);
-						}
+						absPath(tempcwd, param, cwd);
 					}
 					
-					if(isDir(tempcwd))
+					void listcb(Lv2FsDirent *entry)
 					{
-						void listcb(Lv2FsDirent *entry)
-						{
-							char filename[256];
-							absPath(filename, entry->d_name, cwd);
-							
-							Lv2FsStat buf;
-							lv2FsStat(filename, &buf);
-							
-							char timebuf[16];
-							strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
-							
-							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %llu %s %s\r\n",
-								((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
-								((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
-								((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
-								((buf.st_mode & S_IXUSR) != 0) ? "x" : "-",
-								((buf.st_mode & S_IRGRP) != 0) ? "r" : "-",
-								((buf.st_mode & S_IWGRP) != 0) ? "w" : "-",
-								((buf.st_mode & S_IXGRP) != 0) ? "x" : "-",
-								((buf.st_mode & S_IROTH) != 0) ? "r" : "-",
-								((buf.st_mode & S_IWOTH) != 0) ? "w" : "-",
-								((buf.st_mode & S_IXOTH) != 0) ? "x" : "-",
-								(unsigned long long)buf.st_size, timebuf, entry->d_name);
-							
-							ssend(data_s, buffer);
-						}
+						char filename[256];
+						absPath(filename, entry->d_name, cwd);
 						
-						ssend(conn_s, "150 Accepted data connection\r\n");
+						Lv2FsStat buf;
+						lv2FsStat(filename, &buf);
 						
-						if(slist(tempcwd, listcb) != -1)
-						{
-							ssend(conn_s, "226 Transfer complete\r\n");
-						}
-						else
-						{
-							ssend(conn_s, "550 Cannot access directory\r\n");
-						}
+						char timebuf[16];
+						strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
+						
+						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %llu %s %s\r\n",
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
+							((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
+							((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
+							((buf.st_mode & S_IXUSR) != 0) ? "x" : "-",
+							((buf.st_mode & S_IRGRP) != 0) ? "r" : "-",
+							((buf.st_mode & S_IWGRP) != 0) ? "w" : "-",
+							((buf.st_mode & S_IXGRP) != 0) ? "x" : "-",
+							((buf.st_mode & S_IROTH) != 0) ? "r" : "-",
+							((buf.st_mode & S_IWOTH) != 0) ? "w" : "-",
+							((buf.st_mode & S_IXOTH) != 0) ? "x" : "-",
+							(unsigned long long)buf.st_size, timebuf, entry->d_name);
+						
+						ssend(data_s, buffer);
+					}
+					
+					ssend(conn_s, "150 Accepted data connection\r\n");
+					
+					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) != -1)
+					{
+						ssend(conn_s, "226 Transfer complete\r\n");
 					}
 					else
 					{
@@ -375,57 +403,50 @@ static void handleclient(u64 conn_s_p)
 						absPath(tempcwd, param, cwd);
 					}
 					
-					if(isDir(tempcwd))
+					void listcb(Lv2FsDirent *entry)
 					{
-						void listcb(Lv2FsDirent *entry)
-						{
-							char filename[256];
-							absPath(filename, entry->d_name, cwd);
-							
-							Lv2FsStat buf;
-							lv2FsStat(filename, &buf);
-							
-							char timebuf[16];
-							strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
-							
-							char dirtype[2];
-							if(strcmp(entry->d_name, ".") == 0)
-							{
-								strcpy(dirtype, "c");
-							}
-							else
-							if(strcmp(entry->d_name, "..") == 0)
-							{
-								strcpy(dirtype, "p");
-							}
-							
-							sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-								dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
-								((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
-								(((buf.st_mode & S_IRUSR) != 0) * 4 +
-								((buf.st_mode & S_IWUSR) != 0) * 2 +
-								((buf.st_mode & S_IXUSR) != 0) * 1),
-								(((buf.st_mode & S_IRGRP) != 0) * 4 +
-								((buf.st_mode & S_IWGRP) != 0) * 2 +
-								((buf.st_mode & S_IXGRP) != 0) * 1),
-								(((buf.st_mode & S_IROTH) != 0) * 4 +
-								((buf.st_mode & S_IWOTH) != 0) * 2 +
-								((buf.st_mode & S_IXOTH) != 0) * 1),
-								entry->d_name);
-							
-							ssend(data_s, buffer);
-						}
+						char filename[256];
+						absPath(filename, entry->d_name, cwd);
 						
-						ssend(conn_s, "150 Accepted data connection\r\n");
+						Lv2FsStat buf;
+						lv2FsStat(filename, &buf);
 						
-						if(slist(tempcwd, listcb) != -1)
+						char timebuf[16];
+						strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
+						
+						char dirtype[2];
+						if(strcmp(entry->d_name, ".") == 0)
 						{
-							ssend(conn_s, "226 Transfer complete\r\n");
+							strcpy(dirtype, "c");
 						}
 						else
+						if(strcmp(entry->d_name, "..") == 0)
 						{
-							ssend(conn_s, "550 Cannot access directory\r\n");
+							strcpy(dirtype, "p");
 						}
+						
+						sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+							(((buf.st_mode & S_IRUSR) != 0) * 4 +
+							((buf.st_mode & S_IWUSR) != 0) * 2 +
+							((buf.st_mode & S_IXUSR) != 0) * 1),
+							(((buf.st_mode & S_IRGRP) != 0) * 4 +
+							((buf.st_mode & S_IWGRP) != 0) * 2 +
+							((buf.st_mode & S_IXGRP) != 0) * 1),
+							(((buf.st_mode & S_IROTH) != 0) * 4 +
+							((buf.st_mode & S_IWOTH) != 0) * 2 +
+							((buf.st_mode & S_IXOTH) != 0) * 1),
+							entry->d_name);
+						
+						ssend(data_s, buffer);
+					}
+					
+					ssend(conn_s, "150 Accepted data connection\r\n");
+					
+					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) != -1)
+					{
+						ssend(conn_s, "226 Transfer complete\r\n");
 					}
 					else
 					{
@@ -754,23 +775,16 @@ static void handleclient(u64 conn_s_p)
 						absPath(tempcwd, param, cwd);
 					}
 					
-					if(isDir(tempcwd))
+					void listcb(Lv2FsDirent *entry)
 					{
-						void listcb(Lv2FsDirent *entry)
-						{
-							ssend(data_s, entry->d_name);
-						}
-						
-						ssend(conn_s, "150 Accepted data connection\r\n");
-						
-						if(slist(tempcwd, listcb) != -1)
-						{
-							ssend(conn_s, "226 Transfer complete\r\n");
-						}
-						else
-						{
-							ssend(conn_s, "550 Cannot access directory\r\n");
-						}
+						ssend(data_s, entry->d_name);
+					}
+					
+					ssend(conn_s, "150 Accepted data connection\r\n");
+					
+					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) != -1)
+					{
+						ssend(conn_s, "226 Transfer complete\r\n");
 					}
 					else
 					{
@@ -793,55 +807,48 @@ static void handleclient(u64 conn_s_p)
 					absPath(tempcwd, param, cwd);
 				}
 				
-				if(isDir(tempcwd))
+				void listcb(Lv2FsDirent *entry)
 				{
-					void listcb(Lv2FsDirent *entry)
+					char filename[256];
+					absPath(filename, entry->d_name, cwd);
+					
+					Lv2FsStat buf;
+					lv2FsStat(filename, &buf);
+					
+					char timebuf[16];
+					strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
+					
+					char dirtype[2];
+					if(strcmp(entry->d_name, ".") == 0)
 					{
-						char filename[256];
-						absPath(filename, entry->d_name, cwd);
-						
-						Lv2FsStat buf;
-						lv2FsStat(filename, &buf);
-						
-						char timebuf[16];
-						strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
-						
-						char dirtype[2];
-						if(strcmp(entry->d_name, ".") == 0)
-						{
-							strcpy(dirtype, "c");
-						}
-						else
-						if(strcmp(entry->d_name, "..") == 0)
-						{
-							strcpy(dirtype, "p");
-						}
-						
-						sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
-							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
-							(((buf.st_mode & S_IRUSR) != 0) * 4 +
-							((buf.st_mode & S_IWUSR) != 0) * 2 +
-							((buf.st_mode & S_IXUSR) != 0) * 1),
-							(((buf.st_mode & S_IRGRP) != 0) * 4 +
-							((buf.st_mode & S_IWGRP) != 0) * 2 +
-							((buf.st_mode & S_IXGRP) != 0) * 1),
-							(((buf.st_mode & S_IROTH) != 0) * 4 +
-							((buf.st_mode & S_IWOTH) != 0) * 2 +
-							((buf.st_mode & S_IXOTH) != 0) * 1),
-							entry->d_name);
-						
-						ssend(conn_s, buffer);
+						strcpy(dirtype, "c");
+					}
+					else
+					if(strcmp(entry->d_name, "..") == 0)
+					{
+						strcpy(dirtype, "p");
 					}
 					
-					ssend(conn_s, "250-Directory Listing\r\n");
-					slist(tempcwd, listcb);
-					ssend(conn_s, "250 End\r\n");
+					sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
+						dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+						((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+						(((buf.st_mode & S_IRUSR) != 0) * 4 +
+						((buf.st_mode & S_IWUSR) != 0) * 2 +
+						((buf.st_mode & S_IXUSR) != 0) * 1),
+						(((buf.st_mode & S_IRGRP) != 0) * 4 +
+						((buf.st_mode & S_IWGRP) != 0) * 2 +
+						((buf.st_mode & S_IXGRP) != 0) * 1),
+						(((buf.st_mode & S_IROTH) != 0) * 4 +
+						((buf.st_mode & S_IWOTH) != 0) * 2 +
+						((buf.st_mode & S_IXOTH) != 0) * 1),
+						entry->d_name);
+					
+					ssend(conn_s, buffer);
 				}
-				else
-				{
-					ssend(conn_s, "550 Cannot access directory\r\n");
-				}
+				
+				ssend(conn_s, "250-Directory Listing\r\n");
+				slist(isDir(tempcwd) ? tempcwd : cwd, listcb);
+				ssend(conn_s, "250 End\r\n");
 			}
 			else
 			if(strcasecmp(cmd, "QUIT") == 0 || strcasecmp(cmd, "BYE") == 0)
@@ -1024,44 +1031,6 @@ static void handleconnections(u64 unused)
 		
 		sclose(&list_s);
 	}
-	
-	sys_ppu_thread_exit(0);
-}
-
-static void ipaddr_get(u64 ip_s_p)
-{
-	// temporary method until something new comes up
-	// will work only if internet connection is available
-	
-	sys_ppu_thread_yield();
-	
-	// connect to some server and add to the status message
-	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
-	
-	struct sockaddr_in sa;
-	memset(&sa, 0, sizeof(sa));
-	sa.sin_family      = AF_INET;
-	sa.sin_port        = htons(53);
-	inet_pton(AF_INET, "8.8.8.8", &sa.sin_addr);
-	
-	if(connect(ip_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
-	{
-		netSocketInfo snf;
-		netGetSockInfo(ip_s, &snf, 1);
-		
-		/*sprintf(status, "%s (IP: %u.%u.%u.%u Port: %i)", status,
-			(snf.local_adr.s_addr & 0xFF000000) >> 24, (snf.local_adr.s_addr & 0xFF0000) >> 16,
-			(snf.local_adr.s_addr & 0xFF00) >> 8, (snf.local_adr.s_addr & 0xFF),
-			FTPPORT);*/
-		
-		sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(snf.local_adr), FTPPORT);
-	}
-	else
-	{
-		strcat(status, " - IP Address Retrieval Failed");
-	}
-	
-	sclose(&ip_s);
 	
 	sys_ppu_thread_exit(0);
 }
