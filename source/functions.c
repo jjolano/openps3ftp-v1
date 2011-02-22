@@ -29,7 +29,7 @@ void absPath(char* absPath, const char* path, const char* cwd)
 	{
 		strcpy(absPath, cwd);
 		
-		if(cwd[-1] != '/')
+		if(cwd[strlen(cwd) - 1] != '/')
 		{
 			strcat(absPath, "/");
 		}
