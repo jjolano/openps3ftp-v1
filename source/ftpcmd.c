@@ -18,7 +18,6 @@
 #include <net/net.h>
 
 #include <malloc.h>
-#include <fcntl.h>
 
 #include "common.h"
 
@@ -34,14 +33,32 @@ int slisten(int port)
 	struct sockaddr_in sa;
 	memset(&sa, 0, sizeof(sa));
 	
-	sa.sin_family      = AF_INET;
-	sa.sin_port        = htons(port);
-	sa.sin_addr.s_addr = htonl(INADDR_ANY);
+	sa.sin_family		= AF_INET;
+	sa.sin_port		= htons(port);
+	sa.sin_addr.s_addr	= htonl(INADDR_ANY);
 	
-	bind(list_s, (struct sockaddr *)&sa, sizeof(sa));
+	socklen_t sin_len = sizeof(struct sockaddr);
+	
+	bind(list_s, (struct sockaddr *)&sa, sin_len);
 	listen(list_s, 8);
 	
 	return list_s;
+}
+
+int sconnect(int *ret, const char ipaddr[16], int port)
+{
+	*ret = socket(AF_INET, SOCK_STREAM, 0);
+	
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof(sa));
+	
+	sa.sin_family		= AF_INET;
+	sa.sin_port		= htons(port);
+	sa.sin_addr.s_addr	= inet_addr(ipaddr);
+	
+	socklen_t sin_len = sizeof(struct sockaddr);
+	
+	return connect(*ret, (struct sockaddr *)&sa, sin_len);
 }
 
 void sclose(int *socket)

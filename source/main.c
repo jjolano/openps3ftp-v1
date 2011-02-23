@@ -133,32 +133,17 @@ void eventHandler(u64 status, u64 param, void * userdata)
 static void ipaddr_get(u64 unused)
 {
 	// connect to some server and add to the status message
+	int ip_s;
 	struct sockaddr_in sa;
-	memset(&sa, 0, sizeof(sa));
-	sa.sin_len	= sizeof(sa);
-	sa.sin_family	= AF_INET;
-	sa.sin_port	= htons(53);
-	inet_pton(AF_INET, "8.8.8.8", &sa.sin_addr);
+	socklen_t sin_len = sizeof(struct sockaddr);
 	
-	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
-	
-	if(connect(ip_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
+	if(sconnect(&ip_s, "8.8.8.8", 53) == 0 && getsockname(ip_s, (struct sockaddr *)&sa, &sin_len) == 0)
 	{
-		struct sockaddr_in ssa;
-		socklen_t len = sizeof(ssa);
-		
-		if(getsockname(ip_s, (struct sockaddr *)&ssa, &len) == 0)
-		{
-			sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(ssa.sin_addr), FTPPORT);
-		}
-		else
-		{
-			strcat(status, " - IP Address Retrieval Failed");
-		}
+		sprintf(status, "IP: %s | Port: %i", inet_ntoa(sa.sin_addr), FTPPORT);
 	}
 	else
 	{
-		strcat(status, " - No Internet Connection");
+		sprintf(status, "IP: Failed | Port: %i", FTPPORT);
 	}
 	
 	sclose(&ip_s);
@@ -174,6 +159,7 @@ static void handleclient(u64 conn_s_p)
 	int connactive = 1; // whether the ftp connection is active or not
 	int dataactive = 0; // prevent the data connection from being closed at the end of the loop
 	int loggedin = 0; // whether the user is logged in or not
+	int passive = 1; // whether passive is working or not (it should be)
 	
 	char user[32]; // stores the username that the user entered
 	char rnfr[256]; // stores the path/to/file for the RNFR command
@@ -188,21 +174,13 @@ static void handleclient(u64 conn_s_p)
 	int p1 = (rand() % 251) + 4;
 	int p2 = rand() % 256;
 	
-	struct sockaddr_in ssa;
-	socklen_t len = sizeof(ssa);
+	struct sockaddr_in sa;
+	socklen_t sin_len = sizeof(struct sockaddr);
 	
-	getsockname(conn_s, (struct sockaddr *)&ssa, &len);
+	passive = (getsockname(conn_s, (struct sockaddr *)&sa, &sin_len) == 0);
 	
 	char pasv_output[64];
-	sprintf(pasv_output, "227 Entering Passive Mode (%s,%i,%i)\r\n", inet_ntoa(ssa.sin_addr), p1, p2);
-	
-	for(int i = 27; i < 43; i++)
-	{
-		if(pasv_output[i] == '.')
-		{
-			pasv_output[i] = ',';
-		}
-	}
+	sprintf(pasv_output, "227 Entering Passive Mode (%i,%i,%i,%i,%i,%i)\r\n", NIPQUAD(sa.sin_addr.s_addr), p1, p2);
 	
 	// set working directory
 	strcpy(cwd, "/");
@@ -270,7 +248,7 @@ static void handleclient(u64 conn_s_p)
 				
 				int data_ls = slisten(((p1 * 256) + p2));
 				
-				if(data_ls > 0)
+				if(data_ls > 0 && passive == 1)
 				{
 					ssend(conn_s, pasv_output);
 					
@@ -314,16 +292,7 @@ static void handleclient(u64 conn_s_p)
 						char ipaddr[16];
 						sprintf(ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
 						
-						data_s = socket(AF_INET, SOCK_STREAM, 0);
-						
-						struct sockaddr_in sa;
-						memset(&sa, 0, sizeof(sa));
-						sa.sin_len	= sizeof(sa);
-						sa.sin_family	= AF_INET;
-						sa.sin_port	= htons(((atoi(data[4]) * 256) + atoi(data[5])));
-						inet_pton(AF_INET, ipaddr, &sa.sin_addr);
-						
-						if(connect(data_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
+						if(sconnect(&data_s, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5]))) == 0)
 						{
 							ssend(conn_s, "200 PORT command successful\r\n");
 							dataactive = 1;
@@ -368,7 +337,7 @@ static void handleclient(u64 conn_s_p)
 						strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
 						
 						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %llu %s %s\r\n",
-							(entry->d_type == 1) ? "d" : "-", 
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
 							((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 							((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
 							((buf.st_mode & S_IXUSR) != 0) ? "x" : "-",
@@ -435,8 +404,8 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-							dirtype, (entry->d_type == 1) ? "dir" : "file",
-							(entry->d_type == 1) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
 							((buf.st_mode & S_IWUSR) != 0) * 2 +
 							((buf.st_mode & S_IXUSR) != 0) * 1),
@@ -834,8 +803,8 @@ static void handleclient(u64 conn_s_p)
 					}
 					
 					sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-						dirtype, (entry->d_type == 1) ? "dir" : "file",
-						(entry->d_type == 1) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+						dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+						((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 						(((buf.st_mode & S_IRUSR) != 0) * 4 +
 						((buf.st_mode & S_IWUSR) != 0) * 2 +
 						((buf.st_mode & S_IXUSR) != 0) * 1),
@@ -1001,17 +970,11 @@ static void handleconnections(u64 unused)
 		int conn_s;
 		sys_ppu_thread_t id;
 		
-		strcpy(status, "Status: Listening for connections");
-		
-		// try to get the ip address
-		sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "GetIPAddress");
-		
 		while(exitapp == 0)
 		{
 			if((conn_s = accept(list_s, NULL, NULL)) > 0)
 			{
 				sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x1000 + BUFFER_SIZE, 0, "ClientCmdHandler");
-				
 				usleep(100000); // this should solve some connection issues
 			}
 		}
@@ -1024,6 +987,9 @@ static void handleconnections(u64 unused)
 
 int main(int argc, const char* argv[])
 {
+	// initialize libnet
+	netInitialize();
+	
 	// handle XMB quit game
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
@@ -1051,11 +1017,9 @@ int main(int argc, const char* argv[])
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_GREEN, res.width, res.height);
 	
-	// initialize libnet
-	netInitialize();
-	
 	// start listening for connections
 	sys_ppu_thread_t id;
+	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "RetrieveIPAddress");
 	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
 	
 	// print stuff to the screen
