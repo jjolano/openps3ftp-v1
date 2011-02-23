@@ -120,7 +120,7 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
 			
 			lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
 			
-			while(lv2FsRead(fd, buf, bufsize, &read) > 0)
+			while(lv2FsRead(fd, buf, bufsize, &read) > 0 && read > 0)
 			{
 				send(socket, buf, (size_t)read, 0);
 				
