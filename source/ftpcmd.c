@@ -84,7 +84,7 @@ int recvfile(int socket, const char filename[256], int bufsize, s64 startpos)
 			
 			lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
 			
-			while(recv(socket, buf, bufsize, 0) > 0)
+			while(recv(socket, buf, bufsize, MSG_WAITALL) > 0)
 			{
 				lv2FsWrite(fd, buf, (u64)bufsize, &written);
 				

@@ -139,11 +139,11 @@ static void ipaddr_get(u64 unused)
 	{
 		netSocketInfo p;
 		netGetSockInfo(FD(ip_s), &p, 1);
-		sprintf(status, "IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
+		sprintf(status, "Status: Listening on IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
 	}
 	else
 	{
-		sprintf(status, "Status: Listening on port %i.", FTPPORT);
+		sprintf(status, "Status: Listening on Port: %i.", FTPPORT);
 	}
 	
 	sclose(&ip_s);
@@ -390,29 +390,33 @@ static void handleclient(u64 conn_s_p)
 						strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 						
 						char dirtype[2];
-						if(strcmp(entry->d_name, ".") == 0)
+						if(strlen(entry->d_name) == 1 && strcmp(entry->d_name, ".") == 0)
 						{
 							strcpy(dirtype, "c");
 						}
 						else
-						if(strcmp(entry->d_name, "..") == 0)
+						if(strlen(entry->d_name) == 2 && strcmp(entry->d_name, "..") == 0)
 						{
 							strcpy(dirtype, "p");
 						}
+						else
+						{
+							dirtype[0] = '\0';
+						}
 						
 						sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-							((buf.st_mode & S_IFDIR) != 0) ? dirtype : "",
+							dirtype,
 							((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
 							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
-							((buf.st_mode & S_IWUSR) != 0) * 2 +
-							((buf.st_mode & S_IXUSR) != 0) * 1),
+								((buf.st_mode & S_IWUSR) != 0) * 2 +
+								((buf.st_mode & S_IXUSR) != 0) * 1),
 							(((buf.st_mode & S_IRGRP) != 0) * 4 +
-							((buf.st_mode & S_IWGRP) != 0) * 2 +
-							((buf.st_mode & S_IXGRP) != 0) * 1),
+								((buf.st_mode & S_IWGRP) != 0) * 2 +
+								((buf.st_mode & S_IXGRP) != 0) * 1),
 							(((buf.st_mode & S_IROTH) != 0) * 4 +
-							((buf.st_mode & S_IWOTH) != 0) * 2 +
-							((buf.st_mode & S_IXOTH) != 0) * 1),
+								((buf.st_mode & S_IWOTH) != 0) * 2 +
+								((buf.st_mode & S_IXOTH) != 0) * 1),
 							entry->d_name);
 						
 						ssend(data_s, buffer);
@@ -791,19 +795,22 @@ static void handleclient(u64 conn_s_p)
 					strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 					
 					char dirtype[2];
-					if(strcmp(entry->d_name, ".") == 0)
+					if(strlen(entry->d_name) == 1 && strcmp(entry->d_name, ".") == 0)
 					{
 						strcpy(dirtype, "c");
 					}
 					else
-					if(strcmp(entry->d_name, "..") == 0)
+					if(strlen(entry->d_name) == 2 && strcmp(entry->d_name, "..") == 0)
 					{
 						strcpy(dirtype, "p");
 					}
+					else
+					{
+						dirtype[0] = '\0';
+					}
 					
 					sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-						((buf.st_mode & S_IFDIR) != 0) ? dirtype : "",
-						((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+						dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
 						((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 						(((buf.st_mode & S_IRUSR) != 0) * 4 +
 							((buf.st_mode & S_IWUSR) != 0) * 2 +
