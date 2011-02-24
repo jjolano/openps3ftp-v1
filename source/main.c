@@ -17,7 +17,7 @@
 #define BUFFER_SIZE	32768	// the default buffer size used in file transfers, in bytes
 #define DISABLE_PASS	0	// whether or not to disable the checking of the password (1 - yes, 0 - no)
 
-const char* VERSION = "1.4-dev";	// used in the welcome message and displayed on-screen
+const char* VERSION = "1.4-rc";	// used in the welcome message and displayed on-screen
 
 #include <assert.h>
 #include <fcntl.h>
@@ -517,6 +517,7 @@ static void handleclient(u64 conn_s_p)
 			if(strcasecmp(cmd, "TYPE") == 0)
 			{
 				ssend(conn_s, "200 TYPE command successful\r\n");
+				dataactive = 1;
 			}
 			else
 			if(strcasecmp(cmd, "REST") == 0)

@@ -35,6 +35,22 @@ Developers: **Compiling from source**
 To compile OpenPS3FTP, all you will need to install is the latest version of [ps3toolchain](https://github.com/ps3dev/ps3toolchain), which will also include the PSL1GHT SDK and ps3libraries.
 
 
+Compatibility
+-------------
+These FTP clients should work with OpenPS3FTP:
+
+* FileZilla (recommended)
+* FlashFXP
+* WinSCP
+* CuteFTP
+* gFTP
+* SmartFTP
+* GNU `ftp` client
+* NcFTP
+* FireFTP
+* ..and maybe more
+
+
 Contributions
 -------------
 You are encouraged to fork this repository, make any improvements to the code, and submit a pull request. With your help, OpenPS3FTP may become the best open source FTP server for the PlayStation 3.
