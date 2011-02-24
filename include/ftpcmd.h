@@ -3,6 +3,8 @@
 #ifndef _openps3ftp_cmdfunc_
 #define _openps3ftp_cmdfunc_
 
+#define FD(socket) (socket & ~SOCKET_FD_MASK)
+
 #define NIPQUAD(addr) \
          ((unsigned char *)&addr)[0], \
          ((unsigned char *)&addr)[1], \

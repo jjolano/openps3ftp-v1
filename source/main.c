@@ -134,16 +134,15 @@ static void ipaddr_get(u64 unused)
 {
 	// connect to some server and add to the status message
 	int ip_s;
-	struct sockaddr_in sa;
-	socklen_t sin_len = sizeof(struct sockaddr);
 	
-	if(sconnect(&ip_s, "8.8.8.8", 53) == 0 && getsockname(ip_s, (struct sockaddr *)&sa, &sin_len) == 0)
+	if(sconnect(&ip_s, "8.8.8.8", 53) == 0)
 	{
-		sprintf(status, "IP: %s | Port: %i", inet_ntoa(sa.sin_addr), FTPPORT);
-	}
-	else
-	{
-		sprintf(status, "IP: Failed | Port: %i", FTPPORT);
+		netSocketInfo p;
+		
+		if(netGetSockInfo(FD(ip_s), &p, 1) >= 0)
+		{
+			sprintf(status, "IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
+		}
 	}
 	
 	sclose(&ip_s);
@@ -174,13 +173,11 @@ static void handleclient(u64 conn_s_p)
 	int p1 = (rand() % 251) + 4;
 	int p2 = rand() % 256;
 	
-	struct sockaddr_in sa;
-	socklen_t sin_len = sizeof(struct sockaddr);
-	
-	passive = (getsockname(conn_s, (struct sockaddr *)&sa, &sin_len) == 0);
+	netSocketInfo p;
+	passive = (netGetSockInfo(FD(conn_s), &p, 1) >= 0);
 	
 	char pasv_output[64];
-	sprintf(pasv_output, "227 Entering Passive Mode (%i,%i,%i,%i,%i,%i)\r\n", NIPQUAD(sa.sin_addr.s_addr), p1, p2);
+	sprintf(pasv_output, "227 Entering Passive Mode (%i,%i,%i,%i,%i,%i)\r\n", NIPQUAD(p.local_adr.s_addr), p1, p2);
 	
 	// set working directory
 	strcpy(cwd, "/");
@@ -1019,7 +1016,7 @@ int main(int argc, const char* argv[])
 	
 	// start listening for connections
 	sys_ppu_thread_t id;
-	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "RetrieveIPAddress");
+	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x2000, 0, "RetrieveIPAddress");
 	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
 	
 	// print stuff to the screen

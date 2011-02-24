@@ -37,9 +37,7 @@ int slisten(int port)
 	sa.sin_port		= htons(port);
 	sa.sin_addr.s_addr	= htonl(INADDR_ANY);
 	
-	socklen_t sin_len = sizeof(struct sockaddr);
-	
-	bind(list_s, (struct sockaddr *)&sa, sin_len);
+	bind(list_s, (struct sockaddr *)&sa, sizeof(sa));
 	listen(list_s, 8);
 	
 	return list_s;
@@ -47,7 +45,9 @@ int slisten(int port)
 
 int sconnect(int *ret, const char ipaddr[16], int port)
 {
-	*ret = socket(AF_INET, SOCK_STREAM, 0);
+	int conn_s = socket(AF_INET, SOCK_STREAM, 0);
+	
+	*ret = conn_s;
 	
 	struct sockaddr_in sa;
 	memset(&sa, 0, sizeof(sa));
@@ -56,9 +56,7 @@ int sconnect(int *ret, const char ipaddr[16], int port)
 	sa.sin_port		= htons(port);
 	sa.sin_addr.s_addr	= inet_addr(ipaddr);
 	
-	socklen_t sin_len = sizeof(struct sockaddr);
-	
-	return connect(*ret, (struct sockaddr *)&sa, sin_len);
+	return connect(conn_s, (struct sockaddr *)&sa, sizeof(sa));
 }
 
 void sclose(int *socket)
