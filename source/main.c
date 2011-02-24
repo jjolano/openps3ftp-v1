@@ -138,11 +138,12 @@ static void ipaddr_get(u64 unused)
 	if(sconnect(&ip_s, "8.8.8.8", 53) == 0)
 	{
 		netSocketInfo p;
-		
-		if(netGetSockInfo(FD(ip_s), &p, 1) >= 0)
-		{
-			sprintf(status, "IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
-		}
+		netGetSockInfo(FD(ip_s), &p, 1);
+		sprintf(status, "IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
+	}
+	else
+	{
+		sprintf(status, "Status: Listening on port %i.", FTPPORT);
 	}
 	
 	sclose(&ip_s);
@@ -158,7 +159,6 @@ static void handleclient(u64 conn_s_p)
 	int connactive = 1; // whether the ftp connection is active or not
 	int dataactive = 0; // prevent the data connection from being closed at the end of the loop
 	int loggedin = 0; // whether the user is logged in or not
-	int passive = 1; // whether passive is working or not (it should be)
 	
 	char user[32]; // stores the username that the user entered
 	char rnfr[256]; // stores the path/to/file for the RNFR command
@@ -174,7 +174,7 @@ static void handleclient(u64 conn_s_p)
 	int p2 = rand() % 256;
 	
 	netSocketInfo p;
-	passive = (netGetSockInfo(FD(conn_s), &p, 1) >= 0);
+	netGetSockInfo(FD(conn_s), &p, 1);
 	
 	char pasv_output[64];
 	sprintf(pasv_output, "227 Entering Passive Mode (%i,%i,%i,%i,%i,%i)\r\n", NIPQUAD(p.local_adr.s_addr), p1, p2);
@@ -245,7 +245,7 @@ static void handleclient(u64 conn_s_p)
 				
 				int data_ls = slisten(((p1 * 256) + p2));
 				
-				if(data_ls > 0 && passive == 1)
+				if(data_ls > 0)
 				{
 					ssend(conn_s, pasv_output);
 					
@@ -331,9 +331,9 @@ static void handleclient(u64 conn_s_p)
 						lv2FsStat(filename, &buf);
 						
 						char timebuf[16];
-						strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
+						strftime(timebuf, 15, "%b %d %H:%M", localtime(&buf.st_mtime));
 						
-						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %llu %s %s\r\n",
+						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s   1 root       root       %llu %s %s\r\n",
 							((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
 							((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 							((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
@@ -401,7 +401,8 @@ static void handleclient(u64 conn_s_p)
 						}
 						
 						sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-							dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+							((buf.st_mode & S_IFDIR) != 0) ? dirtype : "",
+							((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
 							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
 							((buf.st_mode & S_IWUSR) != 0) * 2 +
@@ -695,7 +696,7 @@ static void handleclient(u64 conn_s_p)
 							
 							if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0) == 0)
 							{
-								lv2FsWrite(fd, param2, 31, &written);
+								lv2FsWrite(fd, param2, strlen(param2), &written);
 								sprintf(buffer, "200 New password: %s\r\n", param2);
 								ssend(conn_s, buffer);
 							}
@@ -747,7 +748,8 @@ static void handleclient(u64 conn_s_p)
 					
 					void listcb(Lv2FsDirent *entry)
 					{
-						ssend(data_s, entry->d_name);
+						sprintf(buffer, "%s\r\n", entry->d_name);
+						ssend(data_s, buffer);
 					}
 					
 					ssend(conn_s, "150 Accepted data connection\r\n");
@@ -800,17 +802,18 @@ static void handleclient(u64 conn_s_p)
 					}
 					
 					sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-						dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+						((buf.st_mode & S_IFDIR) != 0) ? dirtype : "",
+						((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
 						((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 						(((buf.st_mode & S_IRUSR) != 0) * 4 +
-						((buf.st_mode & S_IWUSR) != 0) * 2 +
-						((buf.st_mode & S_IXUSR) != 0) * 1),
+							((buf.st_mode & S_IWUSR) != 0) * 2 +
+							((buf.st_mode & S_IXUSR) != 0) * 1),
 						(((buf.st_mode & S_IRGRP) != 0) * 4 +
-						((buf.st_mode & S_IWGRP) != 0) * 2 +
-						((buf.st_mode & S_IXGRP) != 0) * 1),
+							((buf.st_mode & S_IWGRP) != 0) * 2 +
+							((buf.st_mode & S_IXGRP) != 0) * 1),
 						(((buf.st_mode & S_IROTH) != 0) * 4 +
-						((buf.st_mode & S_IWOTH) != 0) * 2 +
-						((buf.st_mode & S_IXOTH) != 0) * 1),
+							((buf.st_mode & S_IWOTH) != 0) * 2 +
+							((buf.st_mode & S_IXOTH) != 0) * 1),
 						entry->d_name);
 					
 					ssend(conn_s, buffer);
@@ -866,7 +869,7 @@ static void handleclient(u64 conn_s_p)
 					Lv2FsStat buf;
 					if(lv2FsStat(filename, &buf) == 0)
 					{
-						sprintf(buffer, "%i %llu", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (unsigned long long)buf.st_size);
+						sprintf(buffer, "213 %llu\r\n", (unsigned long long)buf.st_size);
 						ssend(conn_s, buffer);
 					}
 					else
@@ -1016,7 +1019,7 @@ int main(int argc, const char* argv[])
 	
 	// start listening for connections
 	sys_ppu_thread_t id;
-	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x2000, 0, "RetrieveIPAddress");
+	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "RetrieveIPAddress");
 	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
 	
 	// print stuff to the screen
