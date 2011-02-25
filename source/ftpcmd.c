@@ -18,7 +18,6 @@
 #include <net/net.h>
 
 #include <malloc.h>
-#include <fcntl.h>
 
 #include "common.h"
 
@@ -34,14 +33,30 @@ int slisten(int port)
 	struct sockaddr_in sa;
 	memset(&sa, 0, sizeof(sa));
 	
-	sa.sin_family      = AF_INET;
-	sa.sin_port        = htons(port);
-	sa.sin_addr.s_addr = htonl(INADDR_ANY);
+	sa.sin_family		= AF_INET;
+	sa.sin_port		= htons(port);
+	sa.sin_addr.s_addr	= htonl(INADDR_ANY);
 	
 	bind(list_s, (struct sockaddr *)&sa, sizeof(sa));
 	listen(list_s, 8);
 	
 	return list_s;
+}
+
+int sconnect(int *ret, const char ipaddr[16], int port)
+{
+	int conn_s = socket(AF_INET, SOCK_STREAM, 0);
+	
+	*ret = conn_s;
+	
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof(sa));
+	
+	sa.sin_family		= AF_INET;
+	sa.sin_port		= htons(port);
+	sa.sin_addr.s_addr	= inet_addr(ipaddr);
+	
+	return connect(conn_s, (struct sockaddr *)&sa, sizeof(sa));
 }
 
 void sclose(int *socket)
@@ -103,7 +118,7 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
 			
 			lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
 			
-			while(lv2FsRead(fd, buf, bufsize, &read) > 0)
+			while(lv2FsRead(fd, buf, bufsize, &read) == 0 && read > 0)
 			{
 				send(socket, buf, (size_t)read, 0);
 				

@@ -17,7 +17,7 @@
 #define BUFFER_SIZE	32768	// the default buffer size used in file transfers, in bytes
 #define DISABLE_PASS	0	// whether or not to disable the checking of the password (1 - yes, 0 - no)
 
-const char* VERSION = "1.4-dev";	// used in the welcome message and displayed on-screen
+const char* VERSION = "1.4-rc";	// used in the welcome message and displayed on-screen
 
 #include <assert.h>
 #include <fcntl.h>
@@ -133,32 +133,17 @@ void eventHandler(u64 status, u64 param, void * userdata)
 static void ipaddr_get(u64 unused)
 {
 	// connect to some server and add to the status message
-	struct sockaddr_in sa;
-	memset(&sa, 0, sizeof(sa));
-	sa.sin_len	= sizeof(sa);
-	sa.sin_family	= AF_INET;
-	sa.sin_port	= htons(53);
-	inet_pton(AF_INET, "8.8.8.8", &sa.sin_addr);
+	int ip_s;
 	
-	int ip_s = socket(AF_INET, SOCK_STREAM, 0);
-	
-	if(connect(ip_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
+	if(sconnect(&ip_s, "8.8.8.8", 53) == 0)
 	{
-		struct sockaddr_in ssa;
-		socklen_t len = sizeof(ssa);
-		
-		if(getsockname(ip_s, (struct sockaddr *)&ssa, &len) == 0)
-		{
-			sprintf(status, "%s (IP: %s Port: %i)", status, inet_ntoa(ssa.sin_addr), FTPPORT);
-		}
-		else
-		{
-			strcat(status, " - IP Address Retrieval Failed");
-		}
+		netSocketInfo p;
+		netGetSockInfo(FD(ip_s), &p, 1);
+		sprintf(status, "Status: Listening on IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
 	}
 	else
 	{
-		strcat(status, " - No Internet Connection");
+		sprintf(status, "Status: Listening on Port: %i.", FTPPORT);
 	}
 	
 	sclose(&ip_s);
@@ -188,21 +173,11 @@ static void handleclient(u64 conn_s_p)
 	int p1 = (rand() % 251) + 4;
 	int p2 = rand() % 256;
 	
-	struct sockaddr_in ssa;
-	socklen_t len = sizeof(ssa);
-	
-	getsockname(conn_s, (struct sockaddr *)&ssa, &len);
+	netSocketInfo p;
+	netGetSockInfo(FD(conn_s), &p, 1);
 	
 	char pasv_output[64];
-	sprintf(pasv_output, "227 Entering Passive Mode (%s,%i,%i)\r\n", inet_ntoa(ssa.sin_addr), p1, p2);
-	
-	for(int i = 27; i < 43; i++)
-	{
-		if(pasv_output[i] == '.')
-		{
-			pasv_output[i] = ',';
-		}
-	}
+	sprintf(pasv_output, "227 Entering Passive Mode (%i,%i,%i,%i,%i,%i)\r\n", NIPQUAD(p.local_adr.s_addr), p1, p2);
 	
 	// set working directory
 	strcpy(cwd, "/");
@@ -314,16 +289,7 @@ static void handleclient(u64 conn_s_p)
 						char ipaddr[16];
 						sprintf(ipaddr, "%s.%s.%s.%s", data[0], data[1], data[2], data[3]);
 						
-						data_s = socket(AF_INET, SOCK_STREAM, 0);
-						
-						struct sockaddr_in sa;
-						memset(&sa, 0, sizeof(sa));
-						sa.sin_len	= sizeof(sa);
-						sa.sin_family	= AF_INET;
-						sa.sin_port	= htons(((atoi(data[4]) * 256) + atoi(data[5])));
-						inet_pton(AF_INET, ipaddr, &sa.sin_addr);
-						
-						if(connect(data_s, (struct sockaddr *)&sa, sizeof(sa)) == 0)
+						if(sconnect(&data_s, ipaddr, ((atoi(data[4]) * 256) + atoi(data[5]))) == 0)
 						{
 							ssend(conn_s, "200 PORT command successful\r\n");
 							dataactive = 1;
@@ -365,10 +331,10 @@ static void handleclient(u64 conn_s_p)
 						lv2FsStat(filename, &buf);
 						
 						char timebuf[16];
-						strftime(timebuf, 15, "%Y-%m-%d %H:%M", localtime(&buf.st_mtime));
+						strftime(timebuf, 15, "%b %d %H:%M", localtime(&buf.st_mtime));
 						
-						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s 1 root root %llu %s %s\r\n",
-							(entry->d_type == 1) ? "d" : "-", 
+						sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s   1 root       root       %llu %s %s\r\n",
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
 							((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 							((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
 							((buf.st_mode & S_IXUSR) != 0) ? "x" : "-",
@@ -424,28 +390,33 @@ static void handleclient(u64 conn_s_p)
 						strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 						
 						char dirtype[2];
-						if(strcmp(entry->d_name, ".") == 0)
+						if(strlen(entry->d_name) == 1 && strcmp(entry->d_name, ".") == 0)
 						{
 							strcpy(dirtype, "c");
 						}
 						else
-						if(strcmp(entry->d_name, "..") == 0)
+						if(strlen(entry->d_name) == 2 && strcmp(entry->d_name, "..") == 0)
 						{
 							strcpy(dirtype, "p");
 						}
+						else
+						{
+							dirtype[0] = '\0';
+						}
 						
 						sprintf(buffer, "type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-							dirtype, (entry->d_type == 1) ? "dir" : "file",
-							(entry->d_type == 1) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+							dirtype,
+							((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+							((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 							(((buf.st_mode & S_IRUSR) != 0) * 4 +
-							((buf.st_mode & S_IWUSR) != 0) * 2 +
-							((buf.st_mode & S_IXUSR) != 0) * 1),
+								((buf.st_mode & S_IWUSR) != 0) * 2 +
+								((buf.st_mode & S_IXUSR) != 0) * 1),
 							(((buf.st_mode & S_IRGRP) != 0) * 4 +
-							((buf.st_mode & S_IWGRP) != 0) * 2 +
-							((buf.st_mode & S_IXGRP) != 0) * 1),
+								((buf.st_mode & S_IWGRP) != 0) * 2 +
+								((buf.st_mode & S_IXGRP) != 0) * 1),
 							(((buf.st_mode & S_IROTH) != 0) * 4 +
-							((buf.st_mode & S_IWOTH) != 0) * 2 +
-							((buf.st_mode & S_IXOTH) != 0) * 1),
+								((buf.st_mode & S_IWOTH) != 0) * 2 +
+								((buf.st_mode & S_IXOTH) != 0) * 1),
 							entry->d_name);
 						
 						ssend(data_s, buffer);
@@ -546,6 +517,7 @@ static void handleclient(u64 conn_s_p)
 			if(strcasecmp(cmd, "TYPE") == 0)
 			{
 				ssend(conn_s, "200 TYPE command successful\r\n");
+				dataactive = 1;
 			}
 			else
 			if(strcasecmp(cmd, "REST") == 0)
@@ -729,7 +701,7 @@ static void handleclient(u64 conn_s_p)
 							
 							if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0) == 0)
 							{
-								lv2FsWrite(fd, param2, 31, &written);
+								lv2FsWrite(fd, param2, strlen(param2), &written);
 								sprintf(buffer, "200 New password: %s\r\n", param2);
 								ssend(conn_s, buffer);
 							}
@@ -781,7 +753,8 @@ static void handleclient(u64 conn_s_p)
 					
 					void listcb(Lv2FsDirent *entry)
 					{
-						ssend(data_s, entry->d_name);
+						sprintf(buffer, "%s\r\n", entry->d_name);
+						ssend(data_s, buffer);
 					}
 					
 					ssend(conn_s, "150 Accepted data connection\r\n");
@@ -823,28 +796,32 @@ static void handleclient(u64 conn_s_p)
 					strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 					
 					char dirtype[2];
-					if(strcmp(entry->d_name, ".") == 0)
+					if(strlen(entry->d_name) == 1 && strcmp(entry->d_name, ".") == 0)
 					{
 						strcpy(dirtype, "c");
 					}
 					else
-					if(strcmp(entry->d_name, "..") == 0)
+					if(strlen(entry->d_name) == 2 && strcmp(entry->d_name, "..") == 0)
 					{
 						strcpy(dirtype, "p");
 					}
+					else
+					{
+						dirtype[0] = '\0';
+					}
 					
 					sprintf(buffer, " type=%s%s;siz%s=%llu;modify=%s;UNIX.mode=0%i%i%i;UNIX.uid=root;UNIX.gid=root; %s\r\n",
-						dirtype, (entry->d_type == 1) ? "dir" : "file",
-						(entry->d_type == 1) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
+						dirtype, ((buf.st_mode & S_IFDIR) != 0) ? "dir" : "file",
+						((buf.st_mode & S_IFDIR) != 0) ? "d" : "e", (unsigned long long)buf.st_size, timebuf,
 						(((buf.st_mode & S_IRUSR) != 0) * 4 +
-						((buf.st_mode & S_IWUSR) != 0) * 2 +
-						((buf.st_mode & S_IXUSR) != 0) * 1),
+							((buf.st_mode & S_IWUSR) != 0) * 2 +
+							((buf.st_mode & S_IXUSR) != 0) * 1),
 						(((buf.st_mode & S_IRGRP) != 0) * 4 +
-						((buf.st_mode & S_IWGRP) != 0) * 2 +
-						((buf.st_mode & S_IXGRP) != 0) * 1),
+							((buf.st_mode & S_IWGRP) != 0) * 2 +
+							((buf.st_mode & S_IXGRP) != 0) * 1),
 						(((buf.st_mode & S_IROTH) != 0) * 4 +
-						((buf.st_mode & S_IWOTH) != 0) * 2 +
-						((buf.st_mode & S_IXOTH) != 0) * 1),
+							((buf.st_mode & S_IWOTH) != 0) * 2 +
+							((buf.st_mode & S_IXOTH) != 0) * 1),
 						entry->d_name);
 					
 					ssend(conn_s, buffer);
@@ -900,7 +877,7 @@ static void handleclient(u64 conn_s_p)
 					Lv2FsStat buf;
 					if(lv2FsStat(filename, &buf) == 0)
 					{
-						sprintf(buffer, "%i %llu", ((buf.st_mode & S_IFDIR) != 0) ? 212 : 213, (unsigned long long)buf.st_size);
+						sprintf(buffer, "213 %llu\r\n", (unsigned long long)buf.st_size);
 						ssend(conn_s, buffer);
 					}
 					else
@@ -1001,17 +978,11 @@ static void handleconnections(u64 unused)
 		int conn_s;
 		sys_ppu_thread_t id;
 		
-		strcpy(status, "Status: Listening for connections");
-		
-		// try to get the ip address
-		sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "GetIPAddress");
-		
 		while(exitapp == 0)
 		{
 			if((conn_s = accept(list_s, NULL, NULL)) > 0)
 			{
 				sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x1000 + BUFFER_SIZE, 0, "ClientCmdHandler");
-				
 				usleep(100000); // this should solve some connection issues
 			}
 		}
@@ -1024,6 +995,9 @@ static void handleconnections(u64 unused)
 
 int main(int argc, const char* argv[])
 {
+	// initialize libnet
+	netInitialize();
+	
 	// handle XMB quit game
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
@@ -1051,11 +1025,9 @@ int main(int argc, const char* argv[])
 	init_screen();
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_GREEN, res.width, res.height);
 	
-	// initialize libnet
-	netInitialize();
-	
 	// start listening for connections
 	sys_ppu_thread_t id;
+	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "RetrieveIPAddress");
 	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
 	
 	// print stuff to the screen
