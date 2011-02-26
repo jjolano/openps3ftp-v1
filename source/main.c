@@ -669,7 +669,7 @@ static void handleclient(u64 conn_s_p)
                                                                                                      // for the chmod funtion - fix from v.1.3
 		
 								//tested and working for both dir and files :0)
-                                                                if(lv2FsChmod(absFilePath, S_IFMT | strtol(perms, NULL, 8)) == 0)
+                                                                if(lv2FsChmod(absFilePath, strtol(perms, NULL, 8)) == 0) //cleaned up
                                                                 {
 									ssend(conn_s, "250 File permissions successfully set\r\n");
 								}
