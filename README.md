@@ -51,6 +51,16 @@ These FTP clients should work with OpenPS3FTP:
 * ..and maybe more
 
 
+Release Note
+------------
+OpenPS3FTP version 1.4 is the **final OpenPS3FTP release** from jjolano. It has been thoroughly tested and is alot more stable compared to previous versions.  
+
+Future development will be done by [mumilover](https://github.com/mumilover) or any other dev that would want to pick up this project.  
+One thing I request for all subsequent releases is that you link back to the [original git repository](https://github.com/jjolano/openps3ftp).  
+
+The source code for all subsequent releases must be released as well since OpenPS3FTP is licensed under the GPL.
+
+
 Contributions
 -------------
 You are encouraged to fork this repository, make any improvements to the code, and submit a pull request. With your help, OpenPS3FTP may become the best open source FTP server for the PlayStation 3.
