@@ -90,6 +90,10 @@ int recvfile(int socket, const char filename[256], int bufsize, s64 startpos)
 		lv2FsClose(fd);
 		free(buf);
 	}
+	else
+	{
+		ret = -1;
+	}
 	
 	return ret;
 }
@@ -119,6 +123,10 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
 		
 		lv2FsClose(fd);
 		free(buf);
+	}
+	else
+	{
+		ret = -1;
 	}
 	
 	return ret;
