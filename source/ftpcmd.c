@@ -80,10 +80,12 @@ int recvfile(int socket, const char filename[256], int bufsize, s64 startpos) {
             lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
 
             int bytesReceived = 0;
+            int writeStatus = 0;
             while ((bytesReceived = recv(socket, buf, bufsize, MSG_WAITALL)) > 0) {
-                lv2FsWrite(fd, buf, (u64) bytesReceived, &written);
 
-                if (written < (u64) bytesReceived) {
+                writeStatus = lv2FsWrite(fd, buf, (u64) bytesReceived, &written);
+
+                if ((writeStatus != 0) || (written < (u64) bytesReceived)) {
                     //Some error just happend, clean up and return with error(-1)
                     lv2FsClose(fd);
                     free(buf);
@@ -107,7 +109,8 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos) {
 
             u64 pos, read;
             lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
-            while (lv2FsRead(fd, buf, bufsize, &read) == 0 && read > 0) {
+            int fileReadStatus = 0;
+            while ((fileReadStatus = lv2FsRead(fd, buf, bufsize, &read)) == 0 && read > 0) {
 
                 if (send(socket, buf, (size_t) read, MSG_WAITALL) < read) {
                     //Some error sending has just occured, clean up and return with error(-1)
@@ -115,8 +118,11 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos) {
                     free(buf);
                     return ret; // exit with error
                 }
-            }            
-            ret = 0;
+            }
+            if (fileReadStatus == 0) { // anything else indicates an error while reading from HDD
+                                       // and also premature exit of the while loop!
+                ret = 0;
+            }
             lv2FsClose(fd);
         }
         free(buf);
