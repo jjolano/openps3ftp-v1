@@ -3,6 +3,8 @@
 #ifndef _openps3ftp_cmdfunc_
 #define _openps3ftp_cmdfunc_
 
+#define ssend(socket, str) send(socket, str, strlen(str), 0)
+
 #define FD(socket) (socket & ~SOCKET_FD_MASK)
 
 #define NIPQUAD(addr) \
@@ -14,9 +16,8 @@
 typedef void (*listcb)(Lv2FsDirent *entry);
 
 int recvline(int socket, char* str, int maxlen);
-int ssend(int socket, const char* str);
-int slisten(int port);
-int sconnect(int *ret, const char ipaddr[16], int port);
+int slisten(int port, int backlog);
+int sconnect(int *ret_s, const char ipaddr[16], int port);
 void sclose(int *socket);
 int recvfile(int socket, const char filename[256], int bufsize, s64 startpos);
 int sendfile(int socket, const char filename[256], int bufsize, s64 startpos);

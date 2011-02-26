@@ -17,7 +17,7 @@
 #define BUFFER_SIZE	32768	// the default buffer size used in file transfers, in bytes
 #define DISABLE_PASS	0	// whether or not to disable the checking of the password (1 - yes, 0 - no)
 
-const char* VERSION = "1.4-rc";	// used in the welcome message and displayed on-screen
+const char* VERSION = "1.4";	// used in the welcome message and displayed on-screen
 
 #include <assert.h>
 #include <fcntl.h>
@@ -135,15 +135,13 @@ static void ipaddr_get(u64 unused)
 	// connect to some server and add to the status message
 	int ip_s;
 	
+	sprintf(status, "Status: Listening on Port: %i", FTPPORT);
+	
 	if(sconnect(&ip_s, "8.8.8.8", 53) == 0)
 	{
 		netSocketInfo p;
 		netGetSockInfo(FD(ip_s), &p, 1);
 		sprintf(status, "Status: Listening on IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
-	}
-	else
-	{
-		sprintf(status, "Status: Listening on Port: %i.", FTPPORT);
 	}
 	
 	sclose(&ip_s);
@@ -169,12 +167,12 @@ static void handleclient(u64 conn_s_p)
 	char buffer[1024];
 	
 	// generate pasv output
+	netSocketInfo p;
+	netGetSockInfo(FD(conn_s), &p, 1);
+	
 	srand(conn_s);
 	int p1 = (rand() % 251) + 4;
 	int p2 = rand() % 256;
-	
-	netSocketInfo p;
-	netGetSockInfo(FD(conn_s), &p, 1);
 	
 	char pasv_output[64];
 	sprintf(pasv_output, "227 Entering Passive Mode (%i,%i,%i,%i,%i,%i)\r\n", NIPQUAD(p.local_adr.s_addr), p1, p2);
@@ -211,9 +209,9 @@ static void handleclient(u64 conn_s_p)
 				
 				if(isDir(tempcwd))
 				{
-					sprintf(buffer, "250 Directory change successful: %s\r\n", tempcwd);
-					ssend(conn_s, buffer);
 					strcpy(cwd, tempcwd);
+					sprintf(buffer, "250 Directory change successful: %s\r\n", cwd);
+					ssend(conn_s, buffer);
 				}
 				else
 				{
@@ -223,15 +221,17 @@ static void handleclient(u64 conn_s_p)
 			else
 			if(strcasecmp(cmd, "CDUP") == 0)
 			{
-				for(int i = strlen(cwd) - 2; i > 0; i--)
+				int pos = strlen(cwd) - 2;
+				
+				for(int i = pos; i > 0; i--)
 				{
-					if(cwd[i] != '/')
+					if(cwd[i] == '/' && i < pos)
 					{
-						cwd[i] = '\0';
+						break;
 					}
 					else
 					{
-						break;
+						cwd[i] = '\0';
 					}
 				}
 				
@@ -243,15 +243,13 @@ static void handleclient(u64 conn_s_p)
 			{
 				rest = 0;
 				
-				int data_ls = slisten(((p1 * 256) + p2));
+				int data_ls = slisten((p1 * 256) + p2, 1);
 				
 				if(data_ls > 0)
 				{
 					ssend(conn_s, pasv_output);
 					
 					data_s = accept(data_ls, NULL, NULL);
-					
-					sclose(&data_ls);
 					
 					if(data_s > 0)
 					{
@@ -266,6 +264,8 @@ static void handleclient(u64 conn_s_p)
 				{
 					ssend(conn_s, "451 Cannot create data socket\r\n");
 				}
+				
+				sclose(&data_ls);
 			}
 			else
 			if(strcasecmp(cmd, "PORT") == 0)
@@ -351,7 +351,7 @@ static void handleclient(u64 conn_s_p)
 					
 					ssend(conn_s, "150 Accepted data connection\r\n");
 					
-					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) != -1)
+					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) >= 0)
 					{
 						ssend(conn_s, "226 Transfer complete\r\n");
 					}
@@ -390,12 +390,12 @@ static void handleclient(u64 conn_s_p)
 						strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 						
 						char dirtype[2];
-						if(strlen(entry->d_name) == 1 && strcmp(entry->d_name, ".") == 0)
+						if(strcmp(entry->d_name, ".") == 0)
 						{
 							strcpy(dirtype, "c");
 						}
 						else
-						if(strlen(entry->d_name) == 2 && strcmp(entry->d_name, "..") == 0)
+						if(strcmp(entry->d_name, "..") == 0)
 						{
 							strcpy(dirtype, "p");
 						}
@@ -424,7 +424,7 @@ static void handleclient(u64 conn_s_p)
 					
 					ssend(conn_s, "150 Accepted data connection\r\n");
 					
-					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) != -1)
+					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) >= 0)
 					{
 						ssend(conn_s, "226 Transfer complete\r\n");
 					}
@@ -660,17 +660,16 @@ static void handleclient(u64 conn_s_p)
 							
 							if(split == 1)
 							{
-								char perms[5];  // making room for 4 digits and 1 termination zero
-								sprintf(perms, "0%s", temp); // should now hold "0xxx\0" in memory
-                                                                                             // where xxx is the file permissions
-                                                                
-                                                                char absFilePath[256]; // place-holder for absolute path
-                                                                absPath(absFilePath, filename, cwd); // making sure that we use the absolute path
-                                                                                                     // for the chmod funtion - fix from v.1.3
-		
+								char perms[5];
+								sprintf(perms, "0%s", temp);
+								
+								// jjolano epic failed here :D (problem was ONLY the absolute path..)
+								char absFilePath[256]; // place-holder for absolute path
+								absPath(absFilePath, filename, cwd); // making sure that we use the absolute path
+								
 								//tested and working for both dir and files :0)
-                                                                if(lv2FsChmod(absFilePath, strtol(perms, NULL, 8)) == 0) //cleaned up
-                                                                {
+								if(lv2FsChmod(absFilePath, strtol(perms, NULL, 8)) == 0) //cleaned up
+								{
 									ssend(conn_s, "250 File permissions successfully set\r\n");
 								}
 								else
@@ -765,7 +764,7 @@ static void handleclient(u64 conn_s_p)
 					
 					ssend(conn_s, "150 Accepted data connection\r\n");
 					
-					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) != -1)
+					if(slist(isDir(tempcwd) ? tempcwd : cwd, listcb) >= 0)
 					{
 						ssend(conn_s, "226 Transfer complete\r\n");
 					}
@@ -802,12 +801,12 @@ static void handleclient(u64 conn_s_p)
 					strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 					
 					char dirtype[2];
-					if(strlen(entry->d_name) == 1 && strcmp(entry->d_name, ".") == 0)
+					if(strcmp(entry->d_name, ".") == 0)
 					{
 						strcpy(dirtype, "c");
 					}
 					else
-					if(strlen(entry->d_name) == 2 && strcmp(entry->d_name, "..") == 0)
+					if(strcmp(entry->d_name, "..") == 0)
 					{
 						strcpy(dirtype, "p");
 					}
@@ -927,9 +926,17 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(split == 1)
 				{
-					strcpy(user, param);
-					sprintf(buffer, "331 User %s OK. Password required\r\n", param);
-					ssend(conn_s, buffer);
+					if(DISABLE_PASS == 1)
+					{
+						ssend(conn_s, "230 Welcome to OpenPS3FTP!\r\n");
+						loggedin = 1;
+					}
+					else
+					{
+						strcpy(user, param);
+						sprintf(buffer, "331 User %s OK. Password required\r\n", param);
+						ssend(conn_s, buffer);
+					}
 				}
 				else
 				{
@@ -941,7 +948,7 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(split == 1)
 				{
-					if(DISABLE_PASS || (strcmp(D_USER, user) == 0 && strcmp(userpass, param) == 0))
+					if(strcmp(D_USER, user) == 0 && strcmp(userpass, param) == 0)
 					{
 						ssend(conn_s, "230 Welcome to OpenPS3FTP!\r\n");
 						loggedin = 1;
@@ -977,7 +984,7 @@ static void handleclient(u64 conn_s_p)
 
 static void handleconnections(u64 unused)
 {
-	int list_s = slisten(FTPPORT);
+	int list_s = slisten(FTPPORT, 5);
 	
 	if(list_s > 0)
 	{
@@ -989,7 +996,7 @@ static void handleconnections(u64 unused)
 			if((conn_s = accept(list_s, NULL, NULL)) > 0)
 			{
 				sys_ppu_thread_create(&id, handleclient, (u64)conn_s, 1500, 0x1000 + BUFFER_SIZE, 0, "ClientCmdHandler");
-				usleep(100000); // this should solve some connection issues
+				//usleep(100000); // this should solve some connection issues
 			}
 		}
 		
@@ -1019,6 +1026,7 @@ int main(int argc, const char* argv[])
 	
 	// load password file
 	Lv2FsFile fd;
+	
 	if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0) == 0)
 	{
 		u64 read;
@@ -1033,8 +1041,8 @@ int main(int argc, const char* argv[])
 	
 	// start listening for connections
 	sys_ppu_thread_t id;
-	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "RetrieveIPAddress");
 	sys_ppu_thread_create(&id, handleconnections, 0, 1500, 0x1000, 0, "ServerConnectionHandler");
+	sys_ppu_thread_create(&id, ipaddr_get, 0, 1500, 0x1000, 0, "RetrieveIPAddress");
 	
 	// print stuff to the screen
 	int x, y;

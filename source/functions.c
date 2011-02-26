@@ -60,10 +60,11 @@ int isDir(const char* path)
 int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen)
 {
 	size_t ios = strcspn(str, " ");
-	int ret = (ios < strlen(str));
+	int ret = (ios < strlen(str) - 1);
+	int lmax = (ios < lmaxlen) ? ios : lmaxlen;
 	
-	strncpy(left, str, (ios < lmaxlen) ? ios : lmaxlen);
-	left[ios] = '\0';
+	strncpy(left, str, lmax);
+	left[lmax] = '\0';
 	
 	if(ret)
 	{
