@@ -660,11 +660,17 @@ static void handleclient(u64 conn_s_p)
 							
 							if(split == 1)
 							{
-								char perms[4];
-								sprintf(perms, "0%s", temp);
+								char perms[5];  // making room for 4 digits and 1 termination zero
+								sprintf(perms, "0%s", temp); // should now hold "0xxx\0" in memory
+                                                                                             // where xxx is the file permissions
+                                                                
+                                                                char absFilePath[256]; // place-holder for absolute path
+                                                                absPath(absFilePath, filename, cwd); // making sure that we use the absolute path
+                                                                                                     // for the chmod funtion - fix from v.1.3
 		
-								if(lv2FsChmod(filename, S_IFMT | strtol(perms, NULL, 8)) == 0)
-								{
+								//tested and working for both dir and files :0)
+                                                                if(lv2FsChmod(absFilePath, S_IFMT | strtol(perms, NULL, 8)) == 0)
+                                                                {
 									ssend(conn_s, "250 File permissions successfully set\r\n");
 								}
 								else
