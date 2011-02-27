@@ -132,7 +132,7 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
 	return ret;
 }
 
-int slist(const char dir[256], void (*listcb)(Lv2FsDirent *entry))
+int slist(const char dir[256], void (*listcb)(Lv2FsDirent entry))
 {
 	int count = 0;
 	Lv2FsFile fd;
@@ -144,7 +144,7 @@ int slist(const char dir[256], void (*listcb)(Lv2FsDirent *entry))
 		
 		while(lv2FsReadDir(fd, &entry, &read) == 0 && read > 0)
 		{
-			listcb(&entry);
+			listcb(entry);
 			count++;
 		}
 	}

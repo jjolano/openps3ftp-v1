@@ -322,10 +322,10 @@ static void handleclient(u64 conn_s_p)
 						absPath(tempcwd, param, cwd);
 					}
 					
-					void listcb(Lv2FsDirent *entry)
+					void listcb(Lv2FsDirent entry)
 					{
 						char filename[256];
-						absPath(filename, entry->d_name, cwd);
+						absPath(filename, entry.d_name, cwd);
 						
 						Lv2FsStat buf;
 						lv2FsStat(filename, &buf);
@@ -344,7 +344,7 @@ static void handleclient(u64 conn_s_p)
 							((buf.st_mode & S_IROTH) != 0) ? "r" : "-",
 							((buf.st_mode & S_IWOTH) != 0) ? "w" : "-",
 							((buf.st_mode & S_IXOTH) != 0) ? "x" : "-",
-							(unsigned long long)buf.st_size, timebuf, entry->d_name);
+							(unsigned long long)buf.st_size, timebuf, entry.d_name);
 						
 						ssend(data_s, buffer);
 					}
@@ -378,10 +378,10 @@ static void handleclient(u64 conn_s_p)
 						absPath(tempcwd, param, cwd);
 					}
 					
-					void listcb(Lv2FsDirent *entry)
+					void listcb(Lv2FsDirent entry)
 					{
 						char filename[256];
-						absPath(filename, entry->d_name, cwd);
+						absPath(filename, entry.d_name, cwd);
 						
 						Lv2FsStat buf;
 						lv2FsStat(filename, &buf);
@@ -390,12 +390,12 @@ static void handleclient(u64 conn_s_p)
 						strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 						
 						char dirtype[2];
-						if(strcmp(entry->d_name, ".") == 0)
+						if(strcmp(entry.d_name, ".") == 0)
 						{
 							strcpy(dirtype, "c");
 						}
 						else
-						if(strcmp(entry->d_name, "..") == 0)
+						if(strcmp(entry.d_name, "..") == 0)
 						{
 							strcpy(dirtype, "p");
 						}
@@ -417,7 +417,7 @@ static void handleclient(u64 conn_s_p)
 							(((buf.st_mode & S_IROTH) != 0) * 4 +
 								((buf.st_mode & S_IWOTH) != 0) * 2 +
 								((buf.st_mode & S_IXOTH) != 0) * 1),
-							entry->d_name);
+							entry.d_name);
 						
 						ssend(data_s, buffer);
 					}
@@ -756,9 +756,9 @@ static void handleclient(u64 conn_s_p)
 						absPath(tempcwd, param, cwd);
 					}
 					
-					void listcb(Lv2FsDirent *entry)
+					void listcb(Lv2FsDirent entry)
 					{
-						sprintf(buffer, "%s\r\n", entry->d_name);
+						sprintf(buffer, "%s\r\n", entry.d_name);
 						ssend(data_s, buffer);
 					}
 					
@@ -789,10 +789,10 @@ static void handleclient(u64 conn_s_p)
 					absPath(tempcwd, param, cwd);
 				}
 				
-				void listcb(Lv2FsDirent *entry)
+				void listcb(Lv2FsDirent entry)
 				{
 					char filename[256];
-					absPath(filename, entry->d_name, cwd);
+					absPath(filename, entry.d_name, cwd);
 					
 					Lv2FsStat buf;
 					lv2FsStat(filename, &buf);
@@ -801,12 +801,12 @@ static void handleclient(u64 conn_s_p)
 					strftime(timebuf, 15, "%Y%m%d%H%M%S", localtime(&buf.st_mtime));
 					
 					char dirtype[2];
-					if(strcmp(entry->d_name, ".") == 0)
+					if(strcmp(entry.d_name, ".") == 0)
 					{
 						strcpy(dirtype, "c");
 					}
 					else
-					if(strcmp(entry->d_name, "..") == 0)
+					if(strcmp(entry.d_name, "..") == 0)
 					{
 						strcpy(dirtype, "p");
 					}
@@ -827,7 +827,7 @@ static void handleclient(u64 conn_s_p)
 						(((buf.st_mode & S_IROTH) != 0) * 4 +
 							((buf.st_mode & S_IWOTH) != 0) * 2 +
 							((buf.st_mode & S_IXOTH) != 0) * 1),
-						entry->d_name);
+						entry.d_name);
 					
 					ssend(conn_s, buffer);
 				}
