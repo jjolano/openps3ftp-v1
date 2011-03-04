@@ -13,11 +13,8 @@
 //    You should have received a copy of the GNU General Public License
 //    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <psl1ght/lv2/filesystem.h>
-
 #include <net/net.h>
-
-#include <malloc.h>
+#include <psl1ght/lv2/filesystem.h>
 
 #include "common.h"
 
@@ -59,29 +56,38 @@ void sclose(int *socket)
 	if(*socket != -1)
 	{
 		shutdown(*socket, SHUT_RDWR);
-		close(*socket);
+		closesocket(*socket);
 		*socket = -1;
 	}
 }
 
-int recvfile(int socket, const char filename[256], int bufsize, s64 startpos)
+int recvfile(int socket, const char filename[256], int rest)
 {
-	int ret = 0;
+	int ret = -1;
 	Lv2FsFile fd;
 	
-	char *buf = malloc(bufsize);
+	char *buf = malloc(BUFFER_SIZE);
 	
-	// if no buff is available, then no need to open file :0)
-	if(buf != NULL && lv2FsOpen(filename, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0, NULL, 0) == 0)
+	if(buf != NULL && lv2FsOpen(filename, LV2_O_WRONLY | LV2_O_CREAT, &fd, 0644, NULL, 0) == 0)
 	{
-		u64 pos, bytes, written = 0;
-		lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
+		u64 read, write = 0, pos;
 		
-		while((bytes = (u64)recv(socket, buf, bufsize, MSG_WAITALL)) > 0)
+		if(rest > 0)
 		{
-			if(lv2FsWrite(fd, buf, bytes, &written) != 0 || written < bytes)
+			lv2FsLSeek64(fd, (s64)rest, SEEK_SET, &pos);
+		}
+		else
+		{
+			lv2FsFtruncate(fd, 0);
+		}
+		
+		ret = 0;
+		
+		while((read = (u64)recv(socket, buf, BUFFER_SIZE, MSG_WAITALL)) > 0)
+		{
+			if(lv2FsWrite(fd, buf, read, &write) != 0 || write < read)
 			{
-				// error
+				// write error
 				ret = -1;
 				break;
 			}
@@ -90,32 +96,33 @@ int recvfile(int socket, const char filename[256], int bufsize, s64 startpos)
 		lv2FsClose(fd);
 		free(buf);
 	}
-	else
-	{
-		ret = -1;
-	}
 	
 	return ret;
 }
 
-int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
+int sendfile(int socket, const char filename[256], int rest)
 {
-	int ret = 0;
+	int ret = -1;
 	Lv2FsFile fd;
 	
-	char *buf = malloc(bufsize);
+	char *buf = malloc(BUFFER_SIZE);
 	
-	// if no buff is available, then no need to open file :0)
 	if(buf != NULL && lv2FsOpen(filename, LV2_O_RDONLY, &fd, 0, NULL, 0) == 0)
 	{
-		u64 pos, read;
-		lv2FsLSeek64(fd, startpos, SEEK_SET, &pos);
+		u64 read, pos;
 		
-		while(lv2FsRead(fd, buf, bufsize, &read) == 0 && read > 0)
+		if(rest > 0)
 		{
-			if(send(socket, buf, (size_t)read, MSG_WAITALL) < read)
+			lv2FsLSeek64(fd, (s64)rest, SEEK_SET, &pos);
+		}
+		
+		ret = 0;
+		
+		while(lv2FsRead(fd, buf, BUFFER_SIZE, &read) == 0 && read > 0)
+		{
+			if((u64)send(socket, buf, (size_t)read, 0) < read)
 			{
-				// error
+				// send error
 				ret = -1;
 				break;
 			}
@@ -124,36 +131,7 @@ int sendfile(int socket, const char filename[256], int bufsize, s64 startpos)
 		lv2FsClose(fd);
 		free(buf);
 	}
-	else
-	{
-		ret = -1;
-	}
 	
 	return ret;
-}
-
-int slist(const char dir[256], void (*listcb)(Lv2FsDirent entry))
-{
-	int count = 0;
-	Lv2FsFile fd;
-	
-	if(lv2FsOpenDir(dir, &fd) == 0)
-	{
-		Lv2FsDirent entry;
-		u64 read;
-		
-		while(lv2FsReadDir(fd, &entry, &read) == 0 && read > 0)
-		{
-			listcb(entry);
-			count++;
-		}
-	}
-	else
-	{
-		count = -1;
-	}
-	
-	lv2FsCloseDir(fd);
-	return count;
 }
 

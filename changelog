@@ -1,3 +1,12 @@
+[Version 1.5 - March 4, 2011]
+- Improved performance and stability
+- In-game XMB performance increased
+- Better syscall usage
+- Fixed a possible memory leak
+- Fixed a couple of bugs
+- Added support for commands: MDTM, ABOR
+- nopass: now does normal login procedure (to ensure compatibility) but ignores password value
+
 [Version 1.4 - February 26, 2011]
 - Added more return codes
 - Another new command parser (even better)
