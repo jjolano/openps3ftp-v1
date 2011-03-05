@@ -5,21 +5,31 @@
 cd $(dirname $0)
 
 # clean up
-make clean
-rm openps3ftp.zip
+echo "cleaning..."
+make clean >> /dev/null
+rm openps3ftp.zip -f
 
 # create openps3ftp.zip and add in the README, changelog, and COPYING files
-zip openps3ftp.zip README changelog COPYING
+echo "creating zip..."
+touch README changelog COPYING
+zip openps3ftp.zip README changelog COPYING -q
 
 # compile and make pkgs then add it to the zip
 
+cp ./include/common.h ./temp.h
+
 # nopass
-sed 's/DISABLE_PASS\t0/DISABLE_PASS\t1/' <./include/common.h >./include/common.h
-make pkg && mv openps3ftp.pkg openps3ftp-nopass.pkg && mv openps3ftp.geohot.pkg openps3ftp-nopass.geohot.pkg && zip openps3ftp.zip openps3ftp-nopass.pkg openps3ftp-nopass.geohot.pkg
+echo "creating nopass and adding to zip..."
+sed 's/DISABLE_PASS\t0/DISABLE_PASS\t1/' <./temp.h >./include/common.h
+make pkg >> /dev/null && mv openps3ftp.pkg openps3ftp-nopass.pkg && mv openps3ftp.geohot.pkg openps3ftp-nopass.geohot.pkg && zip openps3ftp.zip openps3ftp-nopass.pkg openps3ftp-nopass.geohot.pkg -q
 
 # normal
-sed 's/DISABLE_PASS\t1/DISABLE_PASS\t0/' <./include/common.h >./include/common.h
-make pkg && zip openps3ftp.zip openps3ftp.pkg openps3ftp.geohot.pkg
+echo "creating normal and adding to zip..."
+sed 's/DISABLE_PASS\t1/DISABLE_PASS\t0/' <./temp.h >./include/common.h
+make pkg >> /dev/null && zip openps3ftp.zip openps3ftp.pkg openps3ftp.geohot.pkg -q
 
+echo "cleaning..."
+make clean >> /dev/null
+rm ./temp.h -f
 echo "done"
 # end
