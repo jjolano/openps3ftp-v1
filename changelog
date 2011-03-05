@@ -6,6 +6,7 @@
 - Fixed a couple of bugs
 - Added support for commands: MDTM, ABOR
 - nopass: now does normal login procedure (to ensure compatibility) but ignores password value
+- Added new build.sh file for developers (creates nopass and normal versions)
 
 [Version 1.4 - February 26, 2011]
 - Added more return codes
