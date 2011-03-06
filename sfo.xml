@@ -26,10 +26,10 @@
 		279
 	</value>
 	<value name="TITLE" type="string">
-		OpenPS3FTP
+		FTP Server
 	</value>
 	<value name="TITLE_ID" type="string">
-		OFTP00001
+		FTPS00000
 	</value>
 	<value name="VERSION" type="string">01.05</value>
 </sfo>

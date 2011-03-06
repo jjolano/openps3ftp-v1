@@ -12,8 +12,8 @@ INCLUDE		:=	include
 DATA		:=	data
 LIBS		:=	-lnet -lsysmodule -lgcm_sys -lreality -lsysutil
 
-TITLE		:=	OpenPS3FTP
-APPID		:=	OFTP00001
+TITLE		:=	FTP Server
+APPID		:=	FTPS00000
 CONTENTID	:=	UP0001-$(APPID)_00-0000000000000000
 PKGFILES	:=	release
 SFOXML		:=	$(CURDIR)/sfo.xml

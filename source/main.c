@@ -1,17 +1,4 @@
-//    This file is part of OpenPS3FTP.
-
-//    OpenPS3FTP is free software: you can redistribute it and/or modify
-//    it under the terms of the GNU General Public License as published by
-//    the Free Software Foundation, either version 3 of the License, or
-//    (at your option) any later version.
-
-//    OpenPS3FTP is distributed in the hope that it will be useful,
-//    but WITHOUT ANY WARRANTY; without even the implied warranty of
-//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//    GNU General Public License for more details.
-
-//    You should have received a copy of the GNU General Public License
-//    along with OpenPS3FTP.  If not, see <http://www.gnu.org/licenses/>.
+//    FTP Server by @jjolano
 
 const char* VERSION = "1.5";	// used in the welcome message and displayed on-screen
 
@@ -32,8 +19,8 @@ const char* VERSION = "1.5";	// used in the welcome message and displayed on-scr
 #include "sconsole.h"
 
 // default login details
-#define D_USER "root"
-#define D_PASS "openbox"
+#define D_USER "user"
+#define D_PASS "ps3"
 
 char userpass[64] = D_PASS;
 char status[128];
@@ -133,7 +120,7 @@ static void ipaddr_get(u64 unused)
 	// connect to some server and add to the status message
 	int ip_s;
 	
-	sprintf(status, "Status: Listening on Port: %i", FTPPORT);
+	sprintf(status, "Port: %i", FTPPORT);
 	
 	sys_ppu_thread_yield();
 	
@@ -141,7 +128,7 @@ static void ipaddr_get(u64 unused)
 	{
 		netSocketInfo p;
 		netGetSockInfo(FD(ip_s), &p, 1);
-		sprintf(status, "Status: Listening on IP: %s Port: %i", inet_ntoa(p.local_adr), FTPPORT);
+		sprintf(status, "IP: %s\nPort: %i", inet_ntoa(p.local_adr), FTPPORT);
 	}
 	
 	sclose(&ip_s);
@@ -181,8 +168,7 @@ static void handleclient(u64 conn_s_p)
 	strcpy(cwd, "/");
 	
 	// welcome message
-	ssend(conn_s, "220-OpenPS3FTP by @jjolano\r\n");
-	sprintf(buffer, "220 Version %s\r\n", VERSION);
+	sprintf(buffer, "220 FTP Server %s by @jjolano\r\n", VERSION);
 	ssend(conn_s, buffer);
 	
 	while(exitapp == 0 && connactive == 1 && recv(conn_s, buffer, 1023, 0) > 0)
@@ -1001,7 +987,7 @@ static void handleclient(u64 conn_s_p)
 				{
 					if(DISABLE_PASS || (strcmp(D_USER, user) == 0 && strcmp(userpass, param) == 0))
 					{
-						ssend(conn_s, "230 Welcome to OpenPS3FTP!\r\n");
+						ssend(conn_s, "230 Welcome !\r\n");
 						loggedin = 1;
 					}
 					else
@@ -1064,16 +1050,13 @@ int main()
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
 	// format version string
-	char version[32];
-	sprintf(version, "Version %s", VERSION);
-	
-	// check if dev_flash is mounted rw
-	int rwflashmount = (exists("/dev_blind") == 0 || exists("/dev_rwflash") == 0 || exists("/dev_fflash") == 0 || exists("/dev_Alejandro") == 0);
+	char infos[32];
+	sprintf(infos, "FTP Server %s by @jjolano", VERSION);
 	
 	// load password file
 	Lv2FsFile fd;
 	
-	if(lv2FsOpen("/dev_hdd0/game/OFTP00001/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0) == 0)
+	if(lv2FsOpen("/dev_hdd0/game/FTPS0000/USRDIR/passwd", LV2_O_RDONLY, &fd, 0, NULL, 0) == 0)
 	{
 		u64 read;
 		lv2FsRead(fd, userpass, 63, &read);
@@ -1106,18 +1089,9 @@ int main()
 				}
 			}
    			
-			print(50, 50, "OpenPS3FTP by jjolano (Twitter: @jjolano)", buffers[currentBuffer]->ptr);
-			print(50, 90, version, buffers[currentBuffer]->ptr);
+			print(50, 50, infos, buffers[currentBuffer]->ptr);
 			
 			print(50, 150, status, buffers[currentBuffer]->ptr);
-			
-			print(50, 210, "Note: IP address retrieval is experimental.", buffers[currentBuffer]->ptr);
-			print(50, 250, "You can always find your console's IP address by navigating to Network Settings -> Status.", buffers[currentBuffer]->ptr);
-			
-			if(rwflashmount == 1)
-			{
-				print(50, 300, "Warning: A writable mountpoint that points to dev_flash was detected. Be careful!", buffers[currentBuffer]->ptr);
-			}
 		}
 		
 		flip(currentBuffer);
