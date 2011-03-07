@@ -1,36 +1,36 @@
 #!/bin/sh -e
-# this sh script just makes it easier for me to make the zip package lol
-
 # go to sh script directory
 cd "$(dirname "$0")"
 
-# clean up
-echo "cleaning..."
+ZIPFILE="openps3ftp.zip"
+PKGFILE="$(basename $(pwd))"
+SEDFILE="./include/common.h"
+
+# clean up directory
+echo "cleaning up..."
 make clean > /dev/null
-rm -f openps3ftp.zip
+rm -f "$ZIPFILE"
 
-# create openps3ftp.zip and add in the README, changelog, and COPYING files
-echo "creating zip..."
-touch README changelog COPYING
-zip -q openps3ftp.zip README changelog COPYING
-
-# compile and make pkgs then add it to the zip
-
-# nopass
-echo "creating nopass and adding to zip..."
-sed -i 's/DISABLE_PASS\t[01]/DISABLE_PASS\t1/' ./include/common.h
+# make pkg then add it to the zip
+## create 'nopass' version
+echo "compiling 'nopass' version..."
+sed -i 's/DISABLE_PASS\t[01]/DISABLE_PASS\t1/' "$SEDFILE"
 make pkg > /dev/null
-mv openps3ftp.pkg openps3ftp-nopass.pkg
-mv openps3ftp.geohot.pkg openps3ftp-nopass.geohot.pkg 
-zip -q openps3ftp.zip openps3ftp-nopass.pkg openps3ftp-nopass.geohot.pkg
+mv "$PKGFILE.pkg" "$PKGFILE-nopass.pkg"
+mv "$PKGFILE.geohot.pkg" "$PKGFILE-nopass.geohot.pkg"
 
-# normal
-echo "creating normal and adding to zip..."
-sed -i 's/DISABLE_PASS\t[01]/DISABLE_PASS\t0/' ./include/common.h
+## create 'normal' version
+echo "compiling 'normal' version..."
+sed -i 's/DISABLE_PASS\t[01]/DISABLE_PASS\t0/' "$SEDFILE"
 make pkg > /dev/null
-zip -q openps3ftp.zip openps3ftp.pkg openps3ftp.geohot.pkg
 
-echo "cleaning..."
+# create the zip file
+echo "creating $ZIPFILE..."
+touch README COPYING changelog *.pkg
+zip "$ZIPFILE" README COPYING changelog *.pkg
+
+# done, clean up
+echo "cleaning up..."
 make clean > /dev/null
 echo "done"
 # end
