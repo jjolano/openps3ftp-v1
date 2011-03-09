@@ -117,9 +117,9 @@ void eventHandler(u64 status, u64 param, void * userdata)
 {
 	switch(status)
 	{
-		case EVENT_REQUEST_EXITAPP:exitapp = 1;break;
-		case EVENT_MENU_OPEN:xmbopen = 1;break;
-		case EVENT_MENU_CLOSE:xmbopen = 0;break;
+		case EVENT_REQUEST_EXITAPP:	exitapp = 1;	break;
+		case EVENT_MENU_OPEN:		xmbopen = 1;	break;
+		case EVENT_MENU_CLOSE:		xmbopen = 0;	break;
 	}
 }
 
@@ -1066,6 +1066,7 @@ int main()
 	
 	// check if dev_flash is mounted rw
 	int rwflash = (exists("/dev_blind") == 0 || exists("/dev_rwflash") == 0 || exists("/dev_fflash") == 0 || exists("/dev_Alejandro") == 0);
+	int error;
 	
 	// format version string
 	char infos[32], status[128];
