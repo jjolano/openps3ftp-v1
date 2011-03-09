@@ -10,7 +10,7 @@ BUILD		:=	build
 SOURCE		:=	source
 INCLUDE		:=	include
 DATA		:=	data
-LIBS		:=	-lnet -lsysmodule -lgcm_sys -lreality -lsysutil
+LIBS		:=	-lnet -lsysmodule -lgcm_sys -lreality -lsysutil -lio
 
 TITLE		:=	FTP Server
 APPID		:=	FTPS00000
