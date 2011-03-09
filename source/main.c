@@ -1,10 +1,16 @@
 //    FTP Server by @jjolano
 
-const char* VERSION = "1.5";	// used in the welcome message and displayed on-screen
+const char* VERSION = "1.5b";	// used in the welcome message and displayed on-screen
 
-#include <assert.h>
-
+#include <psl1ght/lv2.h>
 #include <psl1ght/lv2/filesystem.h>
+
+#include <stdio.h>
+#include <malloc.h>
+#include <string.h>
+#include <assert.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <sysutil/video.h>
 #include <sysutil/events.h>
@@ -15,17 +21,21 @@ const char* VERSION = "1.5";	// used in the welcome message and displayed on-scr
 #include <net/net.h>
 #include <sys/thread.h>
 
+#include <io/pad.h>
+
 #include "common.h"
 #include "sconsole.h"
+#include "filesystem_mount.h"
 
 // default login details
 #define D_USER "user"
 #define D_PASS "ps3"
 
 char userpass[64] = D_PASS;
-char status[128];
+char ipport[128];
 
 int exitapp = 0;
+int disablepass = 0;
 int xmbopen = 0;
 int currentBuffer = 0;
 
@@ -120,7 +130,7 @@ static void ipaddr_get(u64 unused)
 	// connect to some server and add to the status message
 	int ip_s;
 	
-	sprintf(status, "Port: %i", FTPPORT);
+	sprintf(ipport, "Port: %i", FTPPORT);
 	
 	sys_ppu_thread_yield();
 	
@@ -128,7 +138,7 @@ static void ipaddr_get(u64 unused)
 	{
 		netSocketInfo p;
 		netGetSockInfo(FD(ip_s), &p, 1);
-		sprintf(status, "IP: %s\nPort: %i", inet_ntoa(p.local_adr), FTPPORT);
+		sprintf(ipport, "IP: %s\nPort: %i", inet_ntoa(p.local_adr), FTPPORT);
 	}
 	
 	sclose(&ip_s);
@@ -985,7 +995,7 @@ static void handleclient(u64 conn_s_p)
 			{
 				if(split == 1)
 				{
-					if(DISABLE_PASS || (strcmp(D_USER, user) == 0 && strcmp(userpass, param) == 0))
+					if((disablepass == 1) || (strcmp(D_USER, user) == 0 && strcmp(userpass, param) == 0))
 					{
 						ssend(conn_s, "230 Welcome !\r\n");
 						loggedin = 1;
@@ -1043,15 +1053,24 @@ static void handleconnections(u64 unused)
 
 int main()
 {
+	//initialize pad
+	PadInfo padinfo;
+	PadData paddata;
+	int i;
+	
 	// initialize libnet
 	netInitialize();
 	
 	// handle system events
 	sysRegisterCallback(EVENT_SLOT0, eventHandler, NULL);
 	
+	// check if dev_flash is mounted rw
+	int rwflash = (exists("/dev_blind") == 0 || exists("/dev_rwflash") == 0 || exists("/dev_fflash") == 0 || exists("/dev_Alejandro") == 0);
+	
 	// format version string
-	char infos[32];
+	char infos[32], status[128];
 	sprintf(infos, "FTP Server %s by @jjolano", VERSION);
+	strcpy(status, "");
 	
 	// load password file
 	Lv2FsFile fd;
@@ -1065,6 +1084,7 @@ int main()
 	
 	// prepare for screen printing
 	init_screen();
+	ioPadInit(7);
 	sconsoleInit(FONT_COLOR_BLACK, FONT_COLOR_WHITE, res.width, res.height);
 	
 	// start listening for connections
@@ -1081,6 +1101,72 @@ int main()
 		
 		if(xmbopen == 0)
 		{
+			ioPadGetInfo(&padinfo);
+			for(i = 0; i < MAX_PADS; i++)
+			{
+				if(padinfo.status[i])
+				{
+					ioPadGetData(i, &paddata);
+					if(paddata.BTN_CROSS)
+					{
+						exitapp = 1; //Quit application
+					}
+					if(paddata.BTN_CIRCLE)
+					{
+						if(rwflash == 0) //Mount dev_rwflash
+						{
+							if(lv2FsMount(DEV_FLASH1, FS_FAT32, "/dev_rwflash", 0) == 0)
+							{
+								rwflash = 1;
+								strcpy(status, "Successfully mounted writable flash as dev_rwflash.");
+							}
+							else
+							{
+								strcpy(status, "An error occured while mounting writable flash as dev_rwflash.");
+							}
+						}
+						else //Unmount writable flash
+						{
+							if(exists("/dev_blind") == 0)
+								error = lv2FsUnmount("/dev_blind");
+							if(exists("/dev_rwflash") == 0)
+								error = lv2FsUnmount("/dev_rwflash");
+							if(exists("/dev_fflash") == 0)
+								error = lv2FsUnmount("/dev_fflash");
+							if(exists("/dev_Alejandro") == 0)
+								error = lv2FsUnmount("/dev_Alejandro");
+							
+							if(error == 0)
+							{
+								rwflash = 0;
+								strcpy(status, "Successfully unmounted writable flash.");
+							}
+							else
+							{
+								strcpy(status, "An error occured while unmounting writable flash.");
+							}
+						}
+						
+						sleep(1);
+					}
+					if(paddata.BTN_SQUARE)
+					{
+						if(disablepass == 0) //disable password - not doing anything just now
+						{
+							disablepass = 1;
+							strcpy(status, "Successfully disabled password.");
+						}
+						else //enable password - not doing anything just now
+						{
+							disablepass = 0;
+							strcpy(status, "Successfully enabled password.");
+						}
+						
+						sleep(1);
+					}
+				}		
+			}
+			
 			for(y = 0; y < res.height; y++)
 			{
 				for(x = 0; x < res.width; x++)
@@ -1090,8 +1176,26 @@ int main()
 			}
    			
 			print(50, 50, infos, buffers[currentBuffer]->ptr);
-			
+			print(50, 100, ipport, buffers[currentBuffer]->ptr);
 			print(50, 150, status, buffers[currentBuffer]->ptr);
+			
+			print(50, 250, "Press CROSS to quit the application.", buffers[currentBuffer]->ptr);
+			
+			if(rwflash == 0)
+			{
+				print(50, 280, "Press CIRCLE to mount writable flash as dev_rwflash.", buffers[currentBuffer]->ptr);
+			}
+			else
+			{
+				print(50, 200, "Warning: A writable flash is mounted. Be careful while accessing it !", buffers[currentBuffer]->ptr);
+				print(50, 280, "Press CIRCLE to unmount writable flash.", buffers[currentBuffer]->ptr);
+			}
+			
+			if(disablepass == 0)
+				print(50, 310, "Press SQUARE to disable password.", buffers[currentBuffer]->ptr);
+			else
+				print(50, 310, "Press SQUARE to enable password.", buffers[currentBuffer]->ptr);
+			
 		}
 		
 		flip(currentBuffer);
