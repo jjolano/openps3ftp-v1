@@ -1,3 +1,22 @@
+[Version 2.0 - March 12, 2011]
+- New ICON0.PNG (xmb icon)
+- Moved to a different XMB category (now under Network)
+- Fixed another possible memory leak
+- Added more flash mount points to detect
+- Changed LIST format again
+- New algorithms and methods
+- Should support Remote Play
+
+[Version 1.5 - March 4, 2011]
+- Improved performance and stability
+- In-game XMB performance increased
+- Better syscall usage
+- Fixed a possible memory leak
+- Fixed a couple of bugs
+- Added support for commands: MDTM, ABOR
+- nopass: now does normal login procedure (to ensure compatibility) but ignores password value
+- Added new build.sh file for developers (creates nopass and normal versions)
+
 [Version 1.4 - February 26, 2011]
 - Added more return codes
 - Another new command parser (even better)

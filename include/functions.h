@@ -1,15 +1,17 @@
-// General functions
+// OpenPS3FTP functions
+#pragma once
 
-#ifndef _openps3ftp_generalfunc_
-#define _openps3ftp_generalfunc_
+#define ssend(socket,str) send(socket, str, strlen(str), 0)
+#define fis_dir(entry) (entry.st_mode & _IFMT) == _IFDIR
 
-#define isempty(str) (str[0] == '\0')
-
-void absPath(char* absPath, const char* path, const char* cwd);
+void abspath(const char* relpath, const char* cwd, char* abspath);
 int exists(const char* path);
-int isDir(const char* path);
-
-//void stoupper(char *s);
+int is_dir(const char* path);
 int ssplit(const char* str, char* left, int lmaxlen, char* right, int rmaxlen);
 
-#endif /* _openps3ftp_generalfunc_ */
+int slisten(int port, int backlog);
+int sconnect(const char ipaddr[16], int port, int *sd);
+void sclose(int *sd);
+
+int sendfile(const char* filename, int sd, int rest);
+int recvfile(const char* filename, int sd, int rest);

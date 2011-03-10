@@ -1,14 +1,14 @@
 <?xml version="1.0" ?>
 <sfo>
-	<value name="APP_VER" type="string">01.04</value>
+	<value name="APP_VER" type="string">02.00</value>
 	<value name="ATTRIBUTE" type="integer">
-		0
+		5
 	</value>
 	<value name="BOOTABLE" type="integer">
 		1
 	</value>
 	<value name="CATEGORY" type="string">
-		HG
+		CB
 	</value>
 	<value name="LICENSE" type="string">
 		This application was created with the official non-official SDK called PSL1GHT, for more information visit http://www.psl1ght.com/ . This is in no way associated with Sony Computer Entertainment Inc., please do not contact them for help, they will not be able to provide it.
@@ -31,5 +31,5 @@
 	<value name="TITLE_ID" type="string">
 		OFTP00001
 	</value>
-	<value name="VERSION" type="string">01.04</value>
+	<value name="VERSION" type="string">02.00</value>
 </sfo>

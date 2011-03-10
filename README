@@ -1,0 +1,71 @@
+=== OpenPS3FTP README v2.0 ===
+
+.: Default Login Details :.
+Username: root
+Password: openbox
+
+A "nopass" version is included for those who prefer to use anonymous login.
+
+.: Description :.
+OpenPS3FTP is a minimalistic open source File Transfer Protocol ("FTP") server 
+by jjolano for the PlayStation 3. It was written using the PSL1GHT SDK found at 
+http://psl1ght.com/ (git: http://github.com/HACKERCHANNEL/PSL1GHT).
+
+.: License :.
+This software is licensed under the GNU General Public License v3. The source 
+code (along with source trees of previous versions) is available at the 
+OpenPS3FTP git repository at github: https://github.com/jjolano/openps3ftp
+
+.: General Usage Tutorial :.
+Just a small tutorial on the basics.
+
+Prerequisites:
+- Custom Firmware (tested on 3.55, but should work for all)
+- A network connection
+- Optional: Internet access (for IP address retrieval)
+
+Installation:
+- Extract the pkg files from the archive and copy them into a USB drive
+- Connect the USB drive to your console and select the pkg file under the
+  "Install Package Files" menu (found under Game)
+
+    Note:
+    The pkg file that you select should correspond to the custom firmware you 
+    are using. For example: if you have installed geohot's 3.55 jailbreak, use 
+    the file "openps3ftp.geohot.pkg". If not, use "openps3ftp.pkg". Users of 
+    CFW 3.55 kmeaw can use any pkg.
+
+- OpenPS3FTP is now installed!
+
+Usage:
+
+    Note:
+    If your console doesn't have internet access and you don't know it's IP 
+    address, you should take note of the IP Address in 
+    Settings > Network Settings > Settings and Connection Status List.
+
+- Launch OpenPS3FTP (found under Network)
+- Wait until you see text on the screen.
+- Connect to your console using an FTP client (such as FileZilla) using the IP 
+  address that is shown on the screen (or what you noted down if you don't have 
+  internet access) with username: root and password: openbox.
+- Now that you're connected, you can browse through and manipulate files on 
+  your console as if it were a folder on your computer.
+
+
+.: Developers :.
+Feel free to fork the OpenPS3FTP git repository. If you find anything in the 
+code that can be improved or needs to be fixed, you can edit that in your fork 
+and then submit your commit to me via pull request.
+
+If you are developing a program based on or using OpenPS3FTP's code, you must 
+include the source code of your program for each release because OpenPS3FTP is 
+licensed under the GPL.
+
+.: Support :.
+If you need help with this program or would like to point out a bug, please 
+contact me on Twitter (@jjolano) or submit an "Issue" on the OpenPS3FTP git.
+
+You can donate to me via PayPal: http://bit.ly/gmzGcI
+
+Thanks for using OpenPS3FTP!
