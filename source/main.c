@@ -340,7 +340,7 @@ static void handleclient(u64 conn_s_p)
 							char tstr[16];
 							strftime(tstr, 15, "%b %d %H:%M", localtime(&buf.st_mtime));
 							
-							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s   1 root       root       %llu %s %s\r\n",
+							sprintf(buffer, "%s%s%s%s%s%s%s%s%s%s   1 root  root        %llu %s %s\r\n",
 								((buf.st_mode & S_IFDIR) != 0) ? "d" : "-", 
 								((buf.st_mode & S_IRUSR) != 0) ? "r" : "-",
 								((buf.st_mode & S_IWUSR) != 0) ? "w" : "-",
